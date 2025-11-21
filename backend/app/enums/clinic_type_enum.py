@@ -1,0 +1,11 @@
+from enum import Enum
+
+
+class ClinicType(str, Enum):
+    DENTAL = "DENTAL"
+    DERMATOLOGY = "DERMATOLOGY"
+    GYNECOLOGY = "GYNECOLOGY"
+    ENT = "ENT"
+    PHYSIOTHERAPY = "PHYSIOTHERAPY"
+    GENERAL_MEDICINE = "GENERAL_MEDICINE"
+    OTHER = "OTHER"

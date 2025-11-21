@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import (
+    Integer,
+    ForeignKey,
+    Numeric,
+    DateTime,
+    Enum,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..extensions import db
+from ..enums import PaymentMethod
+
+
+class Payment(db.Model):
+    __tablename__ = "payment"
+
+    payment_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    clinic_id: Mapped[int] = mapped_column(
+        ForeignKey("clinic.clinic_id"),
+        nullable=False,
+    )
+    patient_id: Mapped[int | None] = mapped_column(
+        ForeignKey("patient.patient_id"),
+        nullable=True,
+    )
+    plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("installment_plan.plan_id"),
+        nullable=True,
+    )
+    installment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("installment.installment_id"),
+        nullable=True,
+    )
+
+    # Amount that reduces the patient's debt
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+
+    # Optional tip paid by the patient
+    tip_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+
+    method: Mapped[PaymentMethod] = mapped_column(
+        Enum(PaymentMethod),
+        default=PaymentMethod.CASH,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    created_by: Mapped[int] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=False,
+    )
+    approved_by: Mapped[int | None] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=True,
+    )
+
+    # --- RELATIONSHIPS ---
+
+    clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="payments")
+    patient: Mapped["Patient"] = relationship("Patient", back_populates="payments")
+    plan: Mapped["InstallmentPlan"] = relationship("InstallmentPlan", back_populates="payments")
+    installment: Mapped["Installment"] = relationship("Installment")
+
+    created_by_user: Mapped["User"] = relationship(
+        "User",
+        back_populates="created_payments",
+        foreign_keys=[created_by],
+    )
+    approved_by_user: Mapped["User"] = relationship(
+        "User",
+        back_populates="approved_payments",
+        foreign_keys=[approved_by],
+    )
+
+    cash_transaction: Mapped["CashTransaction"] = relationship(
+        "CashTransaction",
+        back_populates="payment",
+        uselist=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Payment {self.payment_id} amount={self.amount} tip={self.tip_amount}>"

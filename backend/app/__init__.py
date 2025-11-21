@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 
 from .config import DevConfig
-from .extensions import db, migrate, cors, jwt
+from .extensions import db, migrate, cors, jwt, bcrypt
 
 
 def create_app(config_object=DevConfig) -> Flask:
@@ -9,7 +9,11 @@ def create_app(config_object=DevConfig) -> Flask:
     app.config.from_object(config_object)
 
     db.init_app(app)
+    bcrypt.init_app(app)
     migrate.init_app(app, db)
+
+    from . import models
+
     cors.init_app(
         app,
         supports_credentials=True,
