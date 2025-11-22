@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 
-from sqlalchemy import Integer, String, ForeignKey, Boolean, DateTime
+from sqlalchemy import Integer, String, ForeignKey, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -11,6 +11,10 @@ from ..extensions import db
 
 class Category(db.Model):
     __tablename__ = "category"
+
+    __table_args__ = (
+        UniqueConstraint("clinic_id", "name", name="uq_category_clinic_name"),
+    )
 
     category_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 

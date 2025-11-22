@@ -28,6 +28,9 @@ class Payment(db.Model):
         ForeignKey("patient.patient_id"),
         nullable=True,
     )
+
+    doctor_id: Mapped[int] = mapped_column(ForeignKey("user.user_id"), nullable=False)
+
     plan_id: Mapped[int | None] = mapped_column(
         ForeignKey("installment_plan.plan_id"),
         nullable=True,
@@ -64,7 +67,6 @@ class Payment(db.Model):
         nullable=True,
     )
 
-    # --- RELATIONSHIPS ---
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="payments")
     patient: Mapped["Patient"] = relationship("Patient", back_populates="payments")
