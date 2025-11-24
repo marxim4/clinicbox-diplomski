@@ -22,7 +22,18 @@ class Config:
 
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret-change-me")
+    # JWT
+    JWT_SECRET_KEY = "change_this_in_env"  # load from env in production
+    JWT_TOKEN_LOCATION = ["headers", "cookies"]
+    JWT_COOKIE_SECURE = False  # True in production (HTTPS)
+    JWT_COOKIE_SAMESITE = "Lax"
+    JWT_COOKIE_HTTPONLY = True
+    JWT_ACCESS_TOKEN_EXPIRES = 1800  # 30 minutes
+    JWT_REFRESH_TOKEN_EXPIRES = 43200  # 12 hours
+
+    # Optional: blacklist / revocation system
+    JWT_BLACKLIST_ENABLED = True
+    JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
 
 
 class DevConfig(Config):

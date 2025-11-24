@@ -24,6 +24,7 @@ class User(db.Model):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(120), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     role: Mapped[UserRole] = mapped_column(
         db.Enum(UserRole),
@@ -89,6 +90,15 @@ class User(db.Model):
 
     def check_password(self, password: str) -> bool:
         return bcrypt.check_password_hash(self.password_hash, password)
+
+    def set_pin(self, pin: str) -> None:
+        # pin is 4 digits, but we hash it like a password
+        self.pin_hash = bcrypt.generate_password_hash(pin).decode()
+
+    def check_pin(self, pin: str) -> bool:
+        if not self.pin_hash:
+            return False
+        return bcrypt.check_password_hash(self.pin_hash, pin)
 
     def __repr__(self) -> str:
         return f"<User {self.user_id} {self.email}>"
