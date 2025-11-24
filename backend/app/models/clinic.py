@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from sqlalchemy import String, Integer, Enum
+from sqlalchemy import String, Integer, Enum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -25,15 +25,30 @@ class Clinic(db.Model):
         nullable=False,
     )
 
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=True,
+        unique=True,
+    )
+
+    owner: Mapped["User"] = relationship(
+        "User",
+        back_populates="owned_clinic",
+        foreign_keys=[owner_user_id],
+        uselist=False,
+    )
+
+    # Approval settings
+    requires_payment_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
+    requires_cash_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
+    requires_close_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    # Relationships
     users: Mapped[List["User"]] = relationship(
         "User",
         back_populates="clinic",
         cascade="all, delete-orphan",
     )
-
-    requires_payment_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
-    requires_cash_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
-    requires_close_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     patients: Mapped[List["Patient"]] = relationship(
         "Patient",
