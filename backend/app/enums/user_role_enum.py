@@ -7,3 +7,4 @@ class UserRole(str, Enum):
     RECEPTION = "RECEPTION"
     ACCOUNTANT = "ACCOUNTANT"
     ADMIN = "ADMIN"
+    MANAGER = "MANAGER"

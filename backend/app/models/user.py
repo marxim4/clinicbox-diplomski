@@ -33,7 +33,20 @@ class User(db.Model):
 
     is_active: Mapped[bool] = mapped_column(default=True)
 
-    clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="users")
+    # main clinic this user belongs to
+    clinic: Mapped["Clinic"] = relationship(
+        "Clinic",
+        back_populates="users",
+        foreign_keys=[clinic_id],  # <-- important
+    )
+
+    # clinic where this user is the OWNER (1–1)
+    owned_clinic: Mapped["Clinic"] = relationship(
+        "Clinic",
+        back_populates="owner",
+        uselist=False,
+        foreign_keys="Clinic.owner_user_id",
+    )
 
     requires_approval_for_actions: Mapped[bool] = mapped_column(default=True)
 

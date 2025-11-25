@@ -13,13 +13,30 @@ def use_schema(schema_cls: type[BaseModel]):
         def wrapper(*args, **kwargs):
             json_data = request.get_json(silent=True) or {}
             if not isinstance(json_data, dict):
-                json_data = {}
+                return (
+                    jsonify(msg="JSON body must be an object"),
+                    HTTPStatus.BAD_REQUEST,
+                )
 
             try:
                 obj = schema_cls.model_validate(json_data)
             except ValidationError as exc:
+                # exc.errors() can contain non-JSON-safe ctx values.
+                # We simplify each error to just loc, msg, type.
+                simplified_errors = [
+                    {
+                        "loc": err.get("loc"),
+                        "msg": err.get("msg"),
+                        "type": err.get("type"),
+                    }
+                    for err in exc.errors()
+                ]
+
                 return (
-                    jsonify({"errors": exc.errors()}),
+                    jsonify(
+                        msg="validation error",
+                        errors=simplified_errors,
+                    ),
                     HTTPStatus.UNPROCESSABLE_ENTITY,
                 )
 

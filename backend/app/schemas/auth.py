@@ -6,6 +6,7 @@ import re
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 from ..constants import PASSWORD_REGEX
+from app.enums import UserRole
 
 
 class RegisterOwnerSchema(BaseModel):
@@ -13,8 +14,9 @@ class RegisterOwnerSchema(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
-    clinic_name: str
+    owner_role: UserRole
 
+    clinic_name: str
     clinic_address: Optional[str] = None
     clinic_type: Optional[str] = None  # enum name, e.g. "DENTAL"
     currency: Optional[str] = "EUR"

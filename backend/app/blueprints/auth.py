@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-
 from flask import Blueprint, jsonify, g
 from flask_jwt_extended import (
     create_access_token,
@@ -12,6 +11,7 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
 )
+
 from sqlalchemy import select
 
 from ..extensions import db
@@ -24,24 +24,17 @@ from ..utils.wrappers import login_required
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-def _make_identity(user: User) -> dict:
-    return {
-        "user_id": user.user_id,
-        "clinic_id": user.clinic_id,
-        "role": user.role.value if hasattr(user.role, "value") else user.role,
-    }
-
-
 def _issue_tokens_response(msg: str, user: User, status: HTTPStatus):
-    identity = _make_identity(user)
-    access = create_access_token(identity=identity)
-    refresh = create_refresh_token(identity=identity)
+    user_id_str = str(user.user_id)
+
+    access = create_access_token(identity=user_id_str)
+    refresh = create_refresh_token(identity=user_id_str)
 
     resp = jsonify(
         msg=msg,
         user_id=user.user_id,
         clinic_id=user.clinic_id,
-        role=identity["role"],
+        role=user.role.value if hasattr(user.role, "value") else user.role,
         access_token=access,
         refresh_token=refresh,
     )
@@ -63,10 +56,7 @@ def register_owner(data: RegisterOwnerSchema):
         try:
             clinic_type = ClinicType[data.clinic_type.upper()]
         except KeyError:
-            return (
-                jsonify(msg=f"invalid clinic_type '{data.clinic_type}'"),
-                HTTPStatus.BAD_REQUEST,
-            )
+            return jsonify(msg=f"invalid clinic_type '{data.clinic_type}'"), HTTPStatus.BAD_REQUEST
     else:
         clinic_type = ClinicType.OTHER
 
@@ -80,11 +70,12 @@ def register_owner(data: RegisterOwnerSchema):
     db.session.add(clinic)
     db.session.flush()
 
+    # Create Owner User
     owner_user = User(
         clinic_id=clinic.clinic_id,
         name=data.owner_name.strip(),
         email=data.email,
-        role=UserRole.OWNER,
+        role=data.owner_role,
         is_active=True,
         requires_approval_for_actions=False,
     )

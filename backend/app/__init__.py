@@ -27,7 +27,7 @@ def create_app(config_object=DevConfig) -> Flask:
 
     app.register_blueprint(cash_bp, url_prefix="/api/cash")
     app.register_blueprint(installment_bp, url_prefix="/api/installment")
-    app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(auth_bp)
 
     # a simple root route (optional)
     @app.get("/")

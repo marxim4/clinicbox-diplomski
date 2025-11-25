@@ -48,11 +48,11 @@ class Clinic(db.Model):
     require_pin_for_actions: Mapped[bool] = mapped_column(default=False, nullable=False)
     require_pin_for_signoff: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    # Relationships
     users: Mapped[List["User"]] = relationship(
         "User",
         back_populates="clinic",
         cascade="all, delete-orphan",
+        foreign_keys="User.clinic_id",  # <-- important
     )
 
     patients: Mapped[List["Patient"]] = relationship(
