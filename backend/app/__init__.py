@@ -21,13 +21,11 @@ def create_app(config_object=DevConfig) -> Flask:
     )
     jwt.init_app(app)
 
-    from .blueprints.cash import bp as cash_bp
-    from .blueprints.installment import bp as installment_bp
     from .blueprints.auth import bp as auth_bp
+    from .blueprints.users import bp as users_bp
 
-    app.register_blueprint(cash_bp, url_prefix="/api/cash")
-    app.register_blueprint(installment_bp, url_prefix="/api/installment")
     app.register_blueprint(auth_bp)
+    app.register_blueprint(users_bp)
 
     # a simple root route (optional)
     @app.get("/")
