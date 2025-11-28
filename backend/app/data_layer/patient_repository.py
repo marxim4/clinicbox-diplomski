@@ -17,9 +17,15 @@ class PatientRepository:
         )
         return db.session.scalar(stmt)
 
-    def get_by_email(self, email: str) -> Optional[Patient]:
-        # email is globally unique in the model, so we don't scope by clinic
-        stmt = select(Patient).where(Patient.email == email)
+    def get_by_email_in_clinic(
+            self,
+            email: str,
+            clinic_id: int,
+    ) -> Optional[Patient]:
+        stmt = select(Patient).where(
+            Patient.clinic_id == clinic_id,
+            Patient.email == email,
+        )
         return db.session.scalar(stmt)
 
     def list_for_clinic(self, clinic_id: int) -> List[Patient]:
