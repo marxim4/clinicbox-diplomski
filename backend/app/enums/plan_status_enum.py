@@ -6,3 +6,4 @@ class PlanStatus(str, Enum):
     PARTIALLY_PAID = "PARTIALLY_PAID"
     PAID = "PAID"
     OVERDUE = "OVERDUE"
+    CANCELLED = "CANCELLED"
