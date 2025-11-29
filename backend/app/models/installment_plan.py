@@ -7,7 +7,7 @@ from sqlalchemy import Integer, String, ForeignKey, Numeric, Date, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
-from ..enums import PlanStatus
+from ..enums import PlanStatus, PaymentMethod
 
 
 class InstallmentPlan(db.Model):
@@ -28,17 +28,27 @@ class InstallmentPlan(db.Model):
         nullable=False,
     )
 
+    # Provided description of plan
     description: Mapped[str | None] = mapped_column(String(255))
+
+    # Total amount of entire plan
     total_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
+    default_payment_method: Mapped[PaymentMethod] = mapped_column(
+        Enum(PaymentMethod),
+        nullable=False,
+        default=PaymentMethod.CASH,
+    )
+
+    # Status of the plan
     status: Mapped[PlanStatus] = mapped_column(
         Enum(PlanStatus),
         default=PlanStatus.PLANNED,
         nullable=False,
     )
 
+    # When the plan starts (optional)
     start_date: Mapped[date | None] = mapped_column(Date)
-
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="installment_plans")
     patient: Mapped["Patient"] = relationship("Patient", back_populates="installment_plans")

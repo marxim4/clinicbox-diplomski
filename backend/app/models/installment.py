@@ -18,15 +18,20 @@ class Installment(db.Model):
         nullable=False,
     )
 
-    # 1, 2, 3, ...
+    # Order of installment inside the plan
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # When this installment is supposed to be paid
+    # Target due-date
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # How much we *expect* for this installment
+    # Expected for this installment
     expected_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
+    amount_paid: Mapped[float] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
+        default=0,
+    )
 
     plan: Mapped["InstallmentPlan"] = relationship("InstallmentPlan", back_populates="installments")
 
