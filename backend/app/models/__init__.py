@@ -9,3 +9,5 @@ from .cash_transaction import CashTransaction
 from .category import Category
 from .daily_close import DailyClose
 from .audit_log import AuditLog
+from .tip import Tip
+from .tip_payout import TipPayout

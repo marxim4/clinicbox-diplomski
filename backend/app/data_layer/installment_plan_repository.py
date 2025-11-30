@@ -28,6 +28,17 @@ class InstallmentPlanRepository:
         )
         return db.session.scalar(stmt)
 
+    def get_installment_in_clinic(self, installment_id, clinic_id):
+        stmt = (
+            select(Installment)
+            .join(InstallmentPlan, Installment.plan_id == InstallmentPlan.plan_id)
+            .where(
+                Installment.installment_id == installment_id,
+                InstallmentPlan.clinic_id == clinic_id,
+            )
+        )
+        return db.session.scalar(stmt)
+
     def list_for_clinic(
             self,
             clinic_id: int,
@@ -191,6 +202,7 @@ class InstallmentPlanRepository:
             .where(
                 InstallmentPlan.clinic_id == clinic_id,
                 Installment.due_date >= from_date,
+                Installment.amount_paid < Installment.expected_amount,  # <<< add this
             )
         )
 
@@ -221,10 +233,71 @@ class InstallmentPlanRepository:
                 "plan_id": inst.plan_id,
                 "due_date": inst.due_date,
                 "expected_amount": float(inst.expected_amount),
-                "patient_id": patient_id,
+                "patient_id": patient_id_,
                 "doctor_id": doctor_id_,
             }
-            for inst, patient_id, doctor_id_ in rows
+            for inst, patient_id_, doctor_id_ in rows
+        ]
+
+        meta = page_meta(page, page_size, total_items)
+        return items, meta
+
+    def list_overdue_installments_for_clinic(
+            self,
+            clinic_id: int,
+            *,
+            doctor_id: int | None = None,
+            patient_id: int | None = None,
+            to_date: date | None = None,
+            page: int | None = None,
+            page_size: int | None = None,
+    ):
+        if to_date is None:
+            to_date = date.today()
+
+        page, page_size = validate_pagination(page, page_size)
+
+        base = (
+            select(Installment, InstallmentPlan.patient_id, InstallmentPlan.doctor_id)
+            .join(InstallmentPlan, Installment.plan_id == InstallmentPlan.plan_id)
+            .where(
+                InstallmentPlan.clinic_id == clinic_id,
+                Installment.due_date < to_date,
+                Installment.amount_paid < Installment.expected_amount,  # unpaid/partially-paid
+            )
+        )
+
+        if doctor_id is not None:
+            base = base.where(InstallmentPlan.doctor_id == doctor_id)
+        if patient_id is not None:
+            base = base.where(InstallmentPlan.patient_id == patient_id)
+
+        total_items = db.session.execute(
+            select(func.count()).select_from(base.subquery())
+        ).scalar_one()
+
+        stmt = (
+            base.order_by(
+                Installment.due_date.asc(),
+                Installment.sequence.asc(),
+                Installment.installment_id.asc(),
+            )
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+
+        rows = db.session.execute(stmt).all()
+
+        items = [
+            {
+                "installment_id": inst.installment_id,
+                "plan_id": inst.plan_id,
+                "due_date": inst.due_date,
+                "expected_amount": float(inst.expected_amount),
+                "patient_id": patient_id_,
+                "doctor_id": doctor_id_,
+            }
+            for inst, patient_id_, doctor_id_ in rows
         ]
 
         meta = page_meta(page, page_size, total_items)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from ..models import User, InstallmentPlan
-from ..data_layer.installment_repository import installment_plan_repo
+from ..data_layer.installment_plan_repository import installment_plan_repo
 from ..data_layer.patient_repository import patient_repo
 from ..data_layer.user_repository import user_repo
 from ..schemas.installments import (
@@ -59,7 +59,7 @@ class InstallmentService:
             self,
             clinic_id: int,
             plan_id: int,
-    ) :
+    ):
         return installment_plan_repo.get_plan_in_clinic(plan_id, clinic_id)
 
     def list_plans_for_clinic(
@@ -145,6 +145,25 @@ class InstallmentService:
             doctor_id=doctor_id,
             patient_id=patient_id,
             from_date=from_date,
+            page=page,
+            page_size=page_size,
+        )
+
+    def list_overdue_installments_for_clinic(
+            self,
+            clinic_id: int,
+            *,
+            doctor_id: int | None = None,
+            patient_id: int | None = None,
+            to_date=None,
+            page: int | None = None,
+            page_size: int | None = None,
+    ):
+        return installment_plan_repo.list_overdue_installments_for_clinic(
+            clinic_id=clinic_id,
+            doctor_id=doctor_id,
+            patient_id=patient_id,
+            to_date=to_date,
             page=page,
             page_size=page_size,
         )

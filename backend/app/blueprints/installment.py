@@ -21,8 +21,53 @@ from ..enums import PlanStatus
 bp = Blueprint("installment_plans", __name__, url_prefix="/installment-plans")
 
 
+def _compute_plan_stats(plan):
+    installments = list(plan.installments or [])
+
+    total_expected = sum(float(i.expected_amount) for i in installments)
+    total_paid = sum(float(i.amount_paid or 0) for i in installments)
+    remaining = max(0.0, total_expected - total_paid)
+
+    today = date.today()
+
+    overdue_count = 0
+    upcoming_unpaid = []
+
+    for inst in installments:
+        expected = float(inst.expected_amount)
+        paid = float(inst.amount_paid or 0)
+
+        if inst.due_date and inst.due_date < today and paid < expected:
+            overdue_count += 1
+
+        if inst.due_date and inst.due_date >= today and paid < expected:
+            upcoming_unpaid.append(inst)
+
+    upcoming_unpaid.sort(key=lambda i: (i.due_date, i.sequence))
+
+    if upcoming_unpaid:
+        first = upcoming_unpaid[0]
+        next_due_date = first.due_date
+        next_due_amount = float(first.expected_amount) - float(first.amount_paid or 0)
+    else:
+        next_due_date = None
+        next_due_amount = None
+
+    return {
+        "total_expected": round(total_expected, 2),
+        "total_paid": round(total_paid, 2),
+        "remaining_amount": round(remaining, 2),
+        "overdue_installments": overdue_count,
+        "next_due_date": next_due_date,
+        "next_due_amount": round(next_due_amount, 2) if next_due_amount is not None else None,
+    }
+
+
 def _serialize_plan(plan):
-    return InstallmentPlanResponseSchema.model_validate(plan).model_dump()
+    base = InstallmentPlanResponseSchema.model_validate(plan).model_dump()
+    stats = _compute_plan_stats(plan)
+    base.update(stats)
+    return base
 
 
 @bp.post("")
@@ -172,6 +217,51 @@ def list_upcoming_installments():
         doctor_id=doctor_id,
         patient_id=patient_id,
         from_date=from_date,
+        page=page,
+        page_size=page_size,
+    )
+
+    return (
+        jsonify(
+            installments=[
+                UpcomingInstallmentResponseSchema(**item).model_dump()
+                for item in items
+            ],
+            meta=PageMetaSchema(**meta).model_dump(by_alias=True),
+        ),
+        HTTPStatus.OK,
+    )
+
+
+@bp.get("/overdue-installments")
+@login_required
+def list_overdue_installments():
+    current_user = g.current_user
+    clinic_id = current_user.clinic_id
+
+    if not clinic_id:
+        return jsonify(msg="user has no clinic assigned"), HTTPStatus.BAD_REQUEST
+
+    doctor_id = request.args.get("doctor_id", type=int)
+    patient_id = request.args.get("patient_id", type=int)
+    to_date_str = request.args.get("to_date", type=str)
+
+    if to_date_str:
+        try:
+            to_date = date.fromisoformat(to_date_str)
+        except ValueError:
+            return jsonify(msg="invalid to_date, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+    else:
+        to_date = None  # service/repo will default to today
+
+    page = request.args.get("page", type=int)
+    page_size = request.args.get("page_size", type=int)
+
+    items, meta = installment_service.list_overdue_installments_for_clinic(
+        clinic_id=clinic_id,
+        doctor_id=doctor_id,
+        patient_id=patient_id,
+        to_date=to_date,
         page=page,
         page_size=page_size,
     )

@@ -134,6 +134,14 @@ class InstallmentPlanResponseSchema(BaseModel):
 
     installments: list[InstallmentItemResponseSchema] = []
 
+    total_expected: float | None = None
+    total_paid: float | None = None
+    remaining_amount: float | None = None
+    overdue_installments: int | None = None
+    next_due_date: Optional[date] = None
+    next_due_amount: Optional[float] = None
+
+
 
 class UpcomingInstallmentResponseSchema(BaseModel):
     installment_id: int
