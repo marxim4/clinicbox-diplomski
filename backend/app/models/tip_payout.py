@@ -36,6 +36,12 @@ class TipPayout(db.Model):
 
     note: Mapped[str | None] = mapped_column(Text)
 
+    cash_transaction: Mapped["CashTransaction"] = relationship(
+        "CashTransaction",
+        back_populates="tip_payout",
+        uselist=False,
+    )
+
     clinic: Mapped["Clinic"] = relationship("Clinic")
     doctor: Mapped["User"] = relationship("User", foreign_keys=[doctor_id])
     created_by_user: Mapped["User"] = relationship("User", foreign_keys=[created_by])

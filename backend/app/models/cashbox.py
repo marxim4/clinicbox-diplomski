@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from sqlalchemy import Integer, String, Text, ForeignKey
+from sqlalchemy import Integer, String, Text, ForeignKey, Boolean, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -20,8 +20,13 @@ class Cashbox(db.Model):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    current_amount: Mapped[float] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
+        default=0,
+    )
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="cashboxes")
 

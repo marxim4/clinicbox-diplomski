@@ -48,6 +48,16 @@ class CashTransaction(db.Model):
         nullable=True,
     )
 
+    tip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tip.tip_id"),
+        nullable=True,
+    )
+
+    tip_payout_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tip_payout.payout_id"),
+        nullable=True,
+    )
+
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     occurred_at: Mapped[datetime] = mapped_column(
@@ -73,11 +83,13 @@ class CashTransaction(db.Model):
         nullable=True,
     )
 
-
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="cash_transactions")
     cashbox: Mapped["Cashbox"] = relationship("Cashbox", back_populates="transactions")
     payment: Mapped["Payment"] = relationship("Payment", back_populates="cash_transaction")
     category: Mapped["Category"] = relationship("Category", back_populates="transactions")
+
+    tip: Mapped["Tip"] = relationship("Tip", back_populates="cash_transaction")
+    tip_payout: Mapped["TipPayout"] = relationship("TipPayout", back_populates="cash_transaction")
 
     created_by_user: Mapped["User"] = relationship(
         "User",

@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-from datetime import date, datetime  # <-- add datetime here
+from datetime import date, datetime
 from typing import Optional, Tuple
 
-from ..models import User, Patient, InstallmentPlan, Installment
-from ..enums import PaymentMethod, PlanStatus
+from ..models import User, Patient, InstallmentPlan, Installment, Payment
+from ..enums import (
+    PaymentMethod,
+    PlanStatus,
+    CashTransactionType,
+    TransactionStatus,
+)
 from ..data_layer.payment_repository import payment_repo
 from ..data_layer.patient_repository import patient_repo  # currently unused but ok
 from ..data_layer.installment_plan_repository import installment_plan_repo
 from ..data_layer.user_repository import user_repo
 from ..data_layer.tip_repository import tip_repo
+from ..data_layer.cashbox_repository import cashbox_repo
+from ..data_layer.cash_transaction_repository import cash_tx_repo
 from ..schemas.payments import CreatePaymentRequestSchema
 
 
@@ -99,7 +106,7 @@ class PaymentService:
             patient_id: int | None,
             plan_id: int | None,
             created_by: int,
-    ) :
+    ):
         if amount <= 0:
             return
 
@@ -111,6 +118,50 @@ class PaymentService:
             plan_id=plan_id,
             created_by=created_by,
         )
+
+    def _auto_cash_for_payment(
+            self,
+            clinic_id: int,
+            user_id: int,
+            payment: Payment,
+            cashbox_id: int | None,
+            total_cash: float,
+    ) -> Optional[str]:
+        if payment.method != PaymentMethod.CASH or total_cash <= 0:
+            return None
+
+        if cashbox_id is not None:
+            cashbox = cashbox_repo.get_in_clinic(cashbox_id, clinic_id)
+            if not cashbox:
+                return "cashbox not found in this clinic"
+        else:
+            cashbox = cashbox_repo.get_default_for_clinic(clinic_id)
+            if not cashbox:
+                # no cashbox configured – silently skip
+                return None
+
+        cash_tx_repo.create_transaction(
+            clinic_id=clinic_id,
+            cashbox_id=cashbox.cashbox_id,
+            type=CashTransactionType.IN,
+            amount=total_cash,
+            payment_id=payment.payment_id,
+            category_id=None,
+            tip_id=None,
+            tip_payout_id=None,
+            note=f"Payment #{payment.payment_id}",
+            status=TransactionStatus.CONFIRMED,
+            occurred_at=payment.created_at,
+            created_by=user_id,
+        )
+
+        cashbox_repo.adjust_balance_for_transaction(
+            cashbox,
+            CashTransactionType.IN,
+            total_cash,
+        )
+
+        return None
 
     def create_payment(
             self,
@@ -177,6 +228,16 @@ class PaymentService:
                 plan_id=plan_id,
                 created_by=current_user.user_id,
             )
+
+            err = self._auto_cash_for_payment(
+                clinic_id=clinic_id,
+                user_id=current_user.user_id,
+                payment=payment,
+                cashbox_id=payload.cashbox_id,
+                total_cash=manual_tip,
+            )
+            if err:
+                return None, err
 
             return payment, None
 
@@ -271,9 +332,18 @@ class PaymentService:
             created_by=current_user.user_id,
         )
 
-        # CashTransaction creation can be added later (using payment.method / cashbox_id)
-        return payment, None
+        total_cash = debt_applied + total_tip
+        err = self._auto_cash_for_payment(
+            clinic_id=clinic_id,
+            user_id=current_user.user_id,
+            payment=payment,
+            cashbox_id=payload.cashbox_id,
+            total_cash=total_cash,
+        )
+        if err:
+            return None, err
 
+        return payment, None
 
     def get_payment(
             self,
