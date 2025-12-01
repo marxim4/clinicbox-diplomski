@@ -73,11 +73,11 @@ class CashService:
         return updated, None
 
     def get_cashbox_balance(
-            self,
-            current_user: User,
-            cashbox_id: int,
-            date_from: datetime | None = None,
-            date_to: datetime | None = None,
+        self,
+        current_user: User,
+        cashbox_id: int,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ):
         clinic_id = current_user.clinic_id
         if not clinic_id:
@@ -87,13 +87,13 @@ class CashService:
         if not cashbox:
             return None, "cashbox not found"
 
-        # For now, ignore date_from/date_to and just return current balance.
-        stats = {
-            "total_in": None,
-            "total_out": None,
-            "total_adjustment": None,
-            "net": float(cashbox.current_amount or 0),
-        }
+        stats = cash_tx_repo.aggregate_for_cashbox(
+            clinic_id=clinic_id,
+            cashbox_id=cashbox.cashbox_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
         return stats, None
 
     # -------- transactions --------

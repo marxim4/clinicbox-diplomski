@@ -22,6 +22,17 @@ class CashboxRepository:
         stmt = base.order_by(Cashbox.name.asc())
         return db.session.scalars(stmt).all()
 
+    def get_default_for_clinic(self, clinic_id: int):
+        stmt = (
+            select(Cashbox)
+            .where(
+                Cashbox.clinic_id == clinic_id,
+                Cashbox.is_active.is_(True),
+            )
+            .order_by(Cashbox.cashbox_id.asc())
+        )
+        return db.session.scalar(stmt)
+
     def create_cashbox(self, clinic_id: int, name: str, description: str | None):
         cashbox = Cashbox(
             clinic_id=clinic_id,
