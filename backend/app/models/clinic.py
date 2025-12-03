@@ -44,9 +44,9 @@ class Clinic(db.Model):
     requires_close_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Authentication / workflow behaviour
-    use_shared_terminal_mode: Mapped[bool] = mapped_column(default=False, nullable=False)
+    use_shared_terminal_mode: Mapped[bool] = mapped_column(default=True, nullable=False)
     require_pin_for_actions: Mapped[bool] = mapped_column(default=False, nullable=False)
-    require_pin_for_signoff: Mapped[bool] = mapped_column(default=False, nullable=False)
+    require_pin_for_signoff: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     users: Mapped[List["User"]] = relationship(
         "User",

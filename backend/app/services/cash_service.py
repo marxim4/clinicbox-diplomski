@@ -8,7 +8,7 @@ from ..enums import CashTransactionType, TransactionStatus
 from ..data_layer.cashbox_repository import cashbox_repo
 from ..data_layer.cash_transaction_repository import cash_tx_repo
 from ..data_layer.payment_repository import payment_repo
-# from ..data_layer.category_repository import category_repo  # if you have it, else remove
+from ..data_layer.category_repository import category_repo  # if you have it, else remove
 from ..schemas.cash import (
     CreateCashboxRequestSchema,
     UpdateCashboxRequestSchema,
@@ -73,11 +73,11 @@ class CashService:
         return updated, None
 
     def get_cashbox_balance(
-        self,
-        current_user: User,
-        cashbox_id: int,
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
+            self,
+            current_user: User,
+            cashbox_id: int,
+            date_from: datetime | None = None,
+            date_to: datetime | None = None,
     ):
         clinic_id = current_user.clinic_id
         if not clinic_id:
@@ -117,10 +117,9 @@ class CashService:
                 return "payment not found in this clinic"
 
         if payload.category_id is not None:
-            if "category_repo" in globals():
-                category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
-                if not category:
-                    return "category not found in this clinic"
+            category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
+            if not category:
+                return "category not found in this clinic"
 
         # tip_id / tip_payout_id are assumed already valid if provided
         return None
@@ -162,6 +161,12 @@ class CashService:
             payload.type,
             float(payload.amount),
         )
+
+        if payload.category_id is not None:
+            category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
+            if category:
+                from datetime import datetime as _dt
+                category_repo.increment_usage(category, _dt.utcnow())
 
         return tx, None
 
