@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+from datetime import datetime, date
+from http import HTTPStatus
+
+from flask import Blueprint, jsonify, g, request
+
+from ..utils.wrappers import login_required
+from ..schemas.reports import (
+    DoctorRevenueItemSchema,
+    CategoryExpenseItemSchema,
+    CashboxSummaryItemSchema,
+    PatientFinancialSummarySchema,
+    TopDebtorItemSchema,
+)
+from ..services.report_service import report_service
+
+bp = Blueprint("reports", __name__, url_prefix="/reports")
+
+
+def _parse_date_param(s: str | None):
+    if not s:
+        return None
+    try:
+        d = date.fromisoformat(s)
+        return datetime(d.year, d.month, d.day)
+    except ValueError:
+        return None
+
+
+@bp.get("/doctor-revenue")
+@login_required
+def doctor_revenue():
+    current_user = g.current_user
+
+    doctor_id = request.args.get("doctor_id", type=int)
+    date_from_str = request.args.get("date_from", type=str)
+    date_to_str = request.args.get("date_to", type=str)
+
+    date_from = _parse_date_param(date_from_str)
+    date_to = _parse_date_param(date_to_str)
+
+    if date_from_str and date_from is None:
+        return jsonify(msg="invalid date_from, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+    if date_to_str and date_to is None:
+        return jsonify(msg="invalid date_to, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+
+    items, error = report_service.doctor_revenue(
+        current_user,
+        date_from=date_from,
+        date_to=date_to,
+        doctor_id=doctor_id,
+    )
+    if error:
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    return (
+        jsonify(
+            items=[
+                DoctorRevenueItemSchema(**item).model_dump()
+                for item in items
+            ]
+        ),
+        HTTPStatus.OK,
+    )
+
+
+@bp.get("/category-expenses")
+@login_required
+def category_expenses():
+    current_user = g.current_user
+
+    date_from_str = request.args.get("date_from", type=str)
+    date_to_str = request.args.get("date_to", type=str)
+
+    date_from = _parse_date_param(date_from_str)
+    date_to = _parse_date_param(date_to_str)
+
+    if date_from_str and date_from is None:
+        return jsonify(msg="invalid date_from, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+    if date_to_str and date_to is None:
+        return jsonify(msg="invalid date_to, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+
+    items, error = report_service.category_expenses(
+        current_user,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    if error:
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    return (
+        jsonify(
+            items=[
+                CategoryExpenseItemSchema(**item).model_dump()
+                for item in items
+            ]
+        ),
+        HTTPStatus.OK,
+    )
+
+
+@bp.get("/cashbox-summary")
+@login_required
+def cashbox_summary():
+    current_user = g.current_user
+
+    date_from_str = request.args.get("date_from", type=str)
+    date_to_str = request.args.get("date_to", type=str)
+
+    date_from = _parse_date_param(date_from_str)
+    date_to = _parse_date_param(date_to_str)
+
+    if date_from_str and date_from is None:
+        return jsonify(msg="invalid date_from, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+    if date_to_str and date_to is None:
+        return jsonify(msg="invalid date_to, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
+
+    items, error = report_service.cashbox_summary(
+        current_user,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    if error:
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    return (
+        jsonify(
+            items=[
+                CashboxSummaryItemSchema(**item).model_dump()
+                for item in items
+            ]
+        ),
+        HTTPStatus.OK,
+    )
+
+
+@bp.get("/patients/<int:patient_id>/financial-summary")
+@login_required
+def patient_financial_summary(patient_id: int):
+    current_user = g.current_user
+
+    data, error = report_service.patient_financial_summary(
+        current_user,
+        patient_id=patient_id,
+    )
+    if error:
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    return (
+        jsonify(PatientFinancialSummarySchema(**data).model_dump()),
+        HTTPStatus.OK,
+    )
+
+
+@bp.get("/patients/top-debtors")
+@login_required
+def top_debtors():
+    current_user = g.current_user
+
+    limit = request.args.get("limit", type=int) or 20
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+
+    items, error = report_service.top_debtors(
+        current_user,
+        limit=limit,
+    )
+    if error:
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    return (
+        jsonify(
+            items=[
+                TopDebtorItemSchema(**item).model_dump()
+                for item in items
+            ]
+        ),
+        HTTPStatus.OK,
+    )

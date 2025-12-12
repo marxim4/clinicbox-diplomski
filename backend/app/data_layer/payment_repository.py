@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from sqlalchemy import select, func, and_
 
@@ -139,7 +139,10 @@ class PaymentRepository:
         if date_from is not None:
             base = base.where(Payment.created_at >= date_from)
         if date_to is not None:
-            base = base.where(Payment.created_at <= date_to)
+            if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
+                base = base.where(Payment.created_at < date_to + timedelta(days=1))
+            else:
+                base = base.where(Payment.created_at <= date_to)
 
         if min_amount is not None:
             base = base.where(Payment.amount >= min_amount)

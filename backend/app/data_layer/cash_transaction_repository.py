@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, Tuple, List
 
 from sqlalchemy import select, func, case
@@ -13,21 +13,21 @@ from ..utils.pagination import validate_pagination, page_meta
 
 class CashTransactionRepository:
     def create_transaction(
-        self,
-        *,
-        clinic_id: int,
-        cashbox_id: int,
-        type: CashTransactionType,
-        amount: float,
-        payment_id: int | None,
-        category_id: int | None,
-        tip_id: int | None,
-        tip_payout_id: int | None,
-        note: str | None,
-        status: TransactionStatus,
-        occurred_at: datetime | None,
-        created_by: int,
-        approved_by: int | None = None,
+            self,
+            *,
+            clinic_id: int,
+            cashbox_id: int,
+            type: CashTransactionType,
+            amount: float,
+            payment_id: int | None,
+            category_id: int | None,
+            tip_id: int | None,
+            tip_payout_id: int | None,
+            note: str | None,
+            status: TransactionStatus,
+            occurred_at: datetime | None,
+            created_by: int,
+            approved_by: int | None = None,
     ):
         tx = CashTransaction(
             clinic_id=clinic_id,
@@ -49,20 +49,20 @@ class CashTransactionRepository:
         return tx
 
     def search(
-        self,
-        clinic_id: int,
-        *,
-        cashbox_id: int | None = None,
-        type: CashTransactionType | None = None,
-        status: TransactionStatus | None = None,
-        category_id: int | None = None,
-        payment_id: int | None = None,
-        date_from: datetime | date | None = None,
-        date_to: datetime | date | None = None,
-        min_amount: float | None = None,
-        max_amount: float | None = None,
-        page: int | None = None,
-        page_size: int | None = None,
+            self,
+            clinic_id: int,
+            *,
+            cashbox_id: int | None = None,
+            type: CashTransactionType | None = None,
+            status: TransactionStatus | None = None,
+            category_id: int | None = None,
+            payment_id: int | None = None,
+            date_from: datetime | date | None = None,
+            date_to: datetime | date | None = None,
+            min_amount: float | None = None,
+            max_amount: float | None = None,
+            page: int | None = None,
+            page_size: int | None = None,
     ) -> Tuple[List[CashTransaction], Optional[dict]]:
         base = select(CashTransaction).where(
             CashTransaction.clinic_id == clinic_id
@@ -82,7 +82,12 @@ class CashTransactionRepository:
         if date_from is not None:
             base = base.where(CashTransaction.occurred_at >= date_from)
         if date_to is not None:
-            base = base.where(CashTransaction.occurred_at <= date_to)
+            # Fix: If it's a datetime at midnight, add 1 day and use < to include the full day
+            if isinstance(date_to, datetime) and date_to.hour == 0:
+                base = base.where(CashTransaction.occurred_at < date_to + timedelta(days=1))
+            else:
+                # It's a date object or a specific time, keep original logic
+                base = base.where(CashTransaction.occurred_at <= date_to)
 
         if min_amount is not None:
             base = base.where(CashTransaction.amount >= min_amount)
@@ -110,12 +115,12 @@ class CashTransactionRepository:
         return items, meta
 
     def aggregate_for_cashbox(
-        self,
-        clinic_id: int,
-        cashbox_id: int,
-        *,
-        date_from: datetime | date | None = None,
-        date_to: datetime | date | None = None,
+            self,
+            clinic_id: int,
+            cashbox_id: int,
+            *,
+            date_from: datetime | date | None = None,
+            date_to: datetime | date | None = None,
     ):
         base = select(CashTransaction).where(
             CashTransaction.clinic_id == clinic_id,
@@ -125,7 +130,10 @@ class CashTransactionRepository:
         if date_from is not None:
             base = base.where(CashTransaction.occurred_at >= date_from)
         if date_to is not None:
-            base = base.where(CashTransaction.occurred_at <= date_to)
+            if isinstance(date_to, datetime) and date_to.hour == 0:
+                base = base.where(CashTransaction.occurred_at < date_to + timedelta(days=1))
+            else:
+                base = base.where(CashTransaction.occurred_at <= date_to)
 
         subq = base.subquery()
 

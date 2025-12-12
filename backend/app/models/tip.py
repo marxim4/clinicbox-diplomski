@@ -45,6 +45,12 @@ class Tip(db.Model):
         nullable=False,
     )
 
+    cash_transaction: Mapped["CashTransaction"] = relationship(
+        "CashTransaction",
+        back_populates="tip",
+        uselist=False
+    )
+
     doctor: Mapped["User"] = relationship("User")
     clinic: Mapped["Clinic"] = relationship("Clinic")
     patient: Mapped["Patient"] = relationship("Patient")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, func
 
@@ -69,7 +69,11 @@ class TipRepository:
         if date_from is not None:
             stmt = stmt.where(Tip.created_at >= date_from)
         if date_to is not None:
-            stmt = stmt.where(Tip.created_at <= date_to)
+            # If it's midnight (00:00:00), we assume inclusive end date -> < next day
+            if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
+                stmt = stmt.where(Tip.created_at < date_to + timedelta(days=1))
+            else:
+                stmt = stmt.where(Tip.created_at <= date_to)
 
         total = db.session.scalar(stmt)
         return float(total or 0)
@@ -86,7 +90,11 @@ class TipRepository:
         if date_from is not None:
             stmt = stmt.where(Tip.created_at >= date_from)
         if date_to is not None:
-            stmt = stmt.where(Tip.created_at <= date_to)
+            # If it's midnight (00:00:00), we assume inclusive end date -> < next day
+            if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
+                stmt = stmt.where(Tip.created_at < date_to + timedelta(days=1))
+            else:
+                stmt = stmt.where(Tip.created_at <= date_to)
 
         total = db.session.scalar(stmt)
         return float(total or 0)

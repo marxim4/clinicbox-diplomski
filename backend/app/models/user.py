@@ -11,9 +11,6 @@ from ..enums import UserRole
 
 class User(db.Model):
     __tablename__ = "user"
-    __table_args__ = (
-        UniqueConstraint("clinic_id", "email", name="uq_user_clinic_email"),
-    )
 
     user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clinic_id: Mapped[int] = mapped_column(
@@ -22,7 +19,7 @@ class User(db.Model):
     )
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    email: Mapped[str] = mapped_column(String(120), nullable=False)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
