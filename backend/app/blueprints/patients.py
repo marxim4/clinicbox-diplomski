@@ -15,7 +15,7 @@ from ..schemas.patients import (
 from ..schemas.pagination import PageMetaSchema
 from ..services.patient_service import patient_service
 
-bp = Blueprint("patients", __name__, url_prefix="/patients")
+bp = Blueprint("patients", __name__, url_prefix="/api/patients")
 
 
 def _serialize_patient(patient):

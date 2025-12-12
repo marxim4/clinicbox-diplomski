@@ -16,7 +16,7 @@ from ..schemas.pagination import PageMetaSchema
 from ..services.cash_service import cash_service
 from ..enums import CashTransactionType, TransactionStatus
 
-bp = Blueprint("cash_transactions", __name__, url_prefix="/cash-transactions")
+bp = Blueprint("cash_transactions", __name__, url_prefix="/api/cash-transactions")
 
 
 def _serialize_tx(tx):

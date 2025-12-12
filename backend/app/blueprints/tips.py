@@ -16,7 +16,7 @@ from ..schemas.tips import (
 )
 from ..services.tip_service import tip_service
 
-bp = Blueprint("tips", __name__, url_prefix="/tips")
+bp = Blueprint("tips", __name__, url_prefix="/api/tips")
 
 
 def _serialize_tip(tip):

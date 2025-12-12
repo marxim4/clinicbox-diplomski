@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 
 from sqlalchemy import (
@@ -18,6 +20,13 @@ from ..enums import AuditAction
 
 class AuditLog(db.Model):
     __tablename__ = "audit_log"
+
+    __table_args__ = (
+        db.Index("ix_audit_log_clinic_created_at", "clinic_id", "created_at"),
+        db.Index("ix_audit_log_clinic_entity", "clinic_id", "entity_name", "entity_id"),
+        db.Index("ix_audit_log_clinic_action", "clinic_id", "action"),
+        db.UniqueConstraint("clinic_id", "curr_hash", name="uq_audit_log_clinic_curr_hash"),
+    )
 
     audit_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
@@ -39,18 +48,18 @@ class AuditLog(db.Model):
     # e.g. "payment", "cash_transaction", "daily_close"
     entity_name: Mapped[str] = mapped_column(String(120), nullable=False)
 
-    # primary key value of the entity (string because could be UUID later)
+    # primary key value of the entity
     entity_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # JSON snapshots before and after
+    # JSON snapshots
     before_data: Mapped[dict | None] = mapped_column(JSON)
     after_data: Mapped[dict | None] = mapped_column(JSON)
 
-    # Optional metadata
+    # Metadata
     ip_address: Mapped[str | None] = mapped_column(String(64))
     device_info: Mapped[str | None] = mapped_column(Text)
 
-    # Hash chain fields for tamper evidence
+    # Hash chain
     prev_hash: Mapped[str | None] = mapped_column(String(128))
     curr_hash: Mapped[str | None] = mapped_column(String(128))
 
@@ -59,7 +68,6 @@ class AuditLog(db.Model):
         default=datetime.utcnow,
         nullable=False,
     )
-
 
     clinic: Mapped["Clinic"] = relationship("Clinic")
     user: Mapped["User"] = relationship("User")

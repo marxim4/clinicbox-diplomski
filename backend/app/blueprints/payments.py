@@ -16,7 +16,7 @@ from ..schemas.pagination import PageMetaSchema
 from ..services.payment_service import payment_service
 from ..enums import PaymentMethod   # <-- make sure this is imported
 
-bp = Blueprint("payments", __name__, url_prefix="/payments")
+bp = Blueprint("payments", __name__, url_prefix="/api/payments")
 
 
 def _serialize_payment(payment):

@@ -21,7 +21,7 @@ from ..schemas.auth import RegisterOwnerSchema, LoginSchema, ChangePasswordSchem
 from ..utils.validation import use_schema
 from ..utils.wrappers import login_required
 
-bp = Blueprint("auth", __name__, url_prefix="/auth")
+bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 
 def _issue_tokens_response(msg: str, user: User, status: HTTPStatus):

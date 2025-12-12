@@ -16,7 +16,7 @@ from ..schemas.cash import (
 )
 from ..services.cash_service import cash_service
 
-bp = Blueprint("cashboxes", __name__, url_prefix="/cashboxes")
+bp = Blueprint("cashboxes", __name__, url_prefix="/api/cashboxes")
 
 
 def _serialize_cashbox(cb):

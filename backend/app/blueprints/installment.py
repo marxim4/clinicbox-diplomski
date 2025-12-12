@@ -18,7 +18,7 @@ from ..schemas.pagination import PageMetaSchema
 from ..services.installment_service import installment_service
 from ..enums import PlanStatus
 
-bp = Blueprint("installment_plans", __name__, url_prefix="/installment-plans")
+bp = Blueprint("installment_plans", __name__, url_prefix="/api/installment-plans")
 
 
 def _compute_plan_stats(plan):

@@ -20,7 +20,7 @@ from ..services.user_service import user_service
 
 from ..schemas.pagination import PageMetaSchema
 
-bp = Blueprint("users", __name__, url_prefix="/users")
+bp = Blueprint("users", __name__, url_prefix="/api/users")
 
 
 def _serialize_user(user):

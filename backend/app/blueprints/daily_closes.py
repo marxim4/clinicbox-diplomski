@@ -15,7 +15,7 @@ from ..schemas.daily_close import (
 from ..schemas.pagination import PageMetaSchema
 from ..services.daily_close_service import daily_close_service
 
-bp = Blueprint("daily_closes", __name__, url_prefix="/daily-closes")
+bp = Blueprint("daily_closes", __name__, url_prefix="/api/daily-closes")
 
 
 def _serialize_close(close):

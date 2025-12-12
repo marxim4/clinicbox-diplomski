@@ -15,7 +15,7 @@ from ..schemas.reports import (
 )
 from ..services.report_service import report_service
 
-bp = Blueprint("reports", __name__, url_prefix="/reports")
+bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
 
 def _parse_date_param(s: str | None):

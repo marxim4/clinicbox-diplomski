@@ -15,7 +15,7 @@ from ..schemas.categories import (
 )
 from ..services.category_service import category_service
 
-bp = Blueprint("categories", __name__, url_prefix="/categories")
+bp = Blueprint("categories", __name__, url_prefix="/api/categories")
 
 
 def _serialize_category(cat):
