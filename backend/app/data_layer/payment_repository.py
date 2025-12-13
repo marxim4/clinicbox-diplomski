@@ -96,6 +96,7 @@ class PaymentRepository:
             tip_amount: float,
             method: PaymentMethod,
             created_by: int,
+            session_user_id: int,
     ):
         payment = Payment(
             clinic_id=clinic_id,
@@ -107,6 +108,7 @@ class PaymentRepository:
             tip_amount=tip_amount,
             method=method,
             created_by=created_by,
+            session_user_id=session_user_id,
         )
         db.session.add(payment)
         db.session.flush()

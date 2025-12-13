@@ -21,6 +21,16 @@ class CreatePaymentRequestSchema(BaseModel):
     method: Optional[PaymentMethod] = None
     cashbox_id: Optional[int] = None
 
+    pin: Optional[str] = None
+    acting_user_id: Optional[int] = None
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None:
+            return round(v, 2)
+        return v
+
     @model_validator(mode="after")
     def validate_logic(self):
         a = float(self.amount) if self.amount is not None else 0
@@ -56,3 +66,7 @@ class PaymentResponseSchema(BaseModel):
     tip_amount: float
     method: PaymentMethod
     created_at: datetime
+
+    created_by: int
+    session_user_id: Optional[int]
+    approved_by: Optional[int] = None

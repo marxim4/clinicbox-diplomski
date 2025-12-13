@@ -18,6 +18,7 @@ class TipPayoutRepository:
         doctor_id: int,
         amount: float,
         created_by: int,
+        session_user_id: int,
         note: str | None = None,
     ) :
         payout = TipPayout(
@@ -25,6 +26,7 @@ class TipPayoutRepository:
             doctor_id=doctor_id,
             amount=amount,
             created_by=created_by,
+            session_user_id=session_user_id,
             note=note,
         )
         db.session.add(payout)

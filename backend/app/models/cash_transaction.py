@@ -82,6 +82,10 @@ class CashTransaction(db.Model):
         ForeignKey("user.user_id"),
         nullable=True,
     )
+    session_user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=False,
+    )
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="cash_transactions")
     cashbox: Mapped["Cashbox"] = relationship("Cashbox", back_populates="transactions")
@@ -100,6 +104,11 @@ class CashTransaction(db.Model):
         "User",
         back_populates="approved_transactions",
         foreign_keys=[approved_by],
+    )
+    session_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[session_user_id],
+        back_populates="sessions_transactions",
     )
 
     def __repr__(self) -> str:

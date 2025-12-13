@@ -127,6 +127,7 @@ class CashService:
     def create_transaction(
             self,
             current_user: User,
+            session_user: User,
             payload: CreateCashTransactionRequestSchema,
     ):
         clinic_id = current_user.clinic_id
@@ -154,6 +155,7 @@ class CashService:
             status=TransactionStatus.CONFIRMED,
             occurred_at=payload.occurred_at,
             created_by=current_user.user_id,
+            session_user_id=session_user.user_id,
         )
 
         cashbox_repo.adjust_balance_for_transaction(
@@ -209,6 +211,7 @@ class CashService:
     def adjust_cashbox_to_counted(
             self,
             current_user: User,
+            session_user: User,
             cashbox_id: int,
             counted_total: float,
             note: str | None = None,
@@ -245,6 +248,7 @@ class CashService:
             status=TransactionStatus.CONFIRMED,
             occurred_at=datetime.utcnow(),
             created_by=current_user.user_id,
+            session_user_id=session_user.user_id,
         )
 
         cashbox_repo.adjust_balance_for_transaction(

@@ -5,7 +5,7 @@ from http import HTTPStatus
 from flask import Blueprint, jsonify, g
 
 from ..extensions import db
-from ..utils.wrappers import login_required, owner_only
+from ..utils.wrappers import login_required, owner_only, require_pin
 from ..utils.validation import use_schema
 from ..schemas.tips import (
     CreateTipRequestSchema,
@@ -40,8 +40,8 @@ def _serialize_payout(payout):
         note=payout.note,
         created_at=payout.created_at,
         created_by=payout.created_by,
+        session_user_id=payout.session_user_id,
     ).model_dump()
-
 
 
 @bp.post("")
@@ -56,7 +56,6 @@ def create_tip(data: CreateTipRequestSchema):
 
     db.session.commit()
     return jsonify(msg="tip created", tip=_serialize_tip(tip)), HTTPStatus.CREATED
-
 
 
 @bp.get("/doctor/<int:doctor_id>")
@@ -95,7 +94,6 @@ def list_tips_for_plan(plan_id: int):
     )
 
 
-
 @bp.get("/doctor/<int:doctor_id>/balance")
 @login_required
 def get_doctor_balance(doctor_id: int):
@@ -113,15 +111,18 @@ def get_doctor_balance(doctor_id: int):
     )
 
 
-
 @bp.post("/doctor/<int:doctor_id>/payout")
-@owner_only
+@login_required
 @use_schema(CreateTipPayoutRequestSchema)
+@require_pin
+@owner_only
 def create_tip_payout(doctor_id: int, data: CreateTipPayoutRequestSchema):
-    owner = g.current_user
+    acting_user = g.current_user
+    session_user = getattr(g, "session_user", acting_user)
 
     payout, error = tip_service.create_payout(
-        owner,
+        current_user=acting_user,
+        session_user=session_user,
         doctor_id=doctor_id,
         amount=data.amount,
         note=data.note,
@@ -137,6 +138,7 @@ def create_tip_payout(doctor_id: int, data: CreateTipPayoutRequestSchema):
 
 
 @bp.get("/doctor/<int:doctor_id>/payouts")
+@login_required
 @owner_only
 def list_tip_payouts_for_doctor(doctor_id: int):
     owner = g.current_user

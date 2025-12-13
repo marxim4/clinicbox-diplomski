@@ -6,7 +6,7 @@ from http import HTTPStatus
 from flask import Blueprint, jsonify, g, request
 
 from ..extensions import db
-from ..utils.wrappers import login_required
+from ..utils.wrappers import login_required, require_pin
 from ..utils.validation import use_schema
 from ..schemas.cash import (
     CreateCashTransactionRequestSchema,
@@ -26,10 +26,16 @@ def _serialize_tx(tx):
 @bp.post("")
 @login_required
 @use_schema(CreateCashTransactionRequestSchema)
+@require_pin
 def create_cash_transaction(data: CreateCashTransactionRequestSchema):
-    current_user = g.current_user
+    acting_user = g.current_user
+    session_user = getattr(g, "session_user", acting_user)
 
-    tx, error = cash_service.create_transaction(current_user, data)
+    tx, error = cash_service.create_transaction(
+        current_user=acting_user,
+        session_user=session_user,
+        payload=data
+    )
     if error == "cashbox not found in this clinic" or error == "cashbox not found":
         return jsonify(msg=error), HTTPStatus.NOT_FOUND
     if error:

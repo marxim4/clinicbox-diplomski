@@ -21,6 +21,7 @@ class TipService:
             self,
             clinic_id: int,
             user_id: int,
+            session_user_id: int,
             payout: TipPayout,
     ):
         cashbox = cashbox_repo.get_default_for_clinic(clinic_id)
@@ -43,6 +44,7 @@ class TipService:
             status=TransactionStatus.CONFIRMED,
             occurred_at=payout.created_at,
             created_by=user_id,
+            session_user_id=session_user_id,
         )
 
         cashbox_repo.adjust_balance_for_transaction(
@@ -126,6 +128,7 @@ class TipService:
     def create_payout(
             self,
             current_user: User,
+            session_user: User,
             doctor_id: int,
             amount: float,
             note: str | None,
@@ -146,12 +149,14 @@ class TipService:
             doctor_id=doctor_id,
             amount=amount,
             created_by=current_user.user_id,
+            session_user_id=session_user.user_id,
             note=note,
         )
 
         self._auto_cash_for_tip_payout(
             clinic_id=clinic_id,
             user_id=current_user.user_id,
+            session_user_id=session_user.user_id,
             payout=payout,
         )
 

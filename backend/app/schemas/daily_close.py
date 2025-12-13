@@ -9,9 +9,12 @@ from pydantic.types import PositiveFloat
 
 class CreateDailyCloseRequestSchema(BaseModel):
     cashbox_id: int
-    date: Optional[date] = None   # if None -> today in service
+    date: Optional[date] = None  # if None -> today in service
     counted_total: PositiveFloat
     note: Optional[str] = None
+
+    pin: Optional[str] = None
+    acting_user_id: Optional[int] = None
 
     @field_validator("note")
     @classmethod
@@ -39,3 +42,7 @@ class DailyCloseResponseSchema(BaseModel):
     closed_by: int
     approved_by: Optional[int]
     closed_at: datetime
+
+    closed_by: int
+    session_user_id: Optional[int]
+    approved_by: Optional[int] = None

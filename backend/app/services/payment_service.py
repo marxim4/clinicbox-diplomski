@@ -11,7 +11,7 @@ from ..enums import (
     TransactionStatus,
 )
 from ..data_layer.payment_repository import payment_repo
-from ..data_layer.patient_repository import patient_repo  # currently unused but ok
+from ..data_layer.patient_repository import patient_repo
 from ..data_layer.installment_plan_repository import installment_plan_repo
 from ..data_layer.user_repository import user_repo
 from ..data_layer.tip_repository import tip_repo
@@ -123,6 +123,7 @@ class PaymentService:
             self,
             clinic_id: int,
             user_id: int,
+            session_user_id: int,
             payment: Payment,
             cashbox_id: int | None,
             total_cash: float,
@@ -153,6 +154,7 @@ class PaymentService:
             status=TransactionStatus.CONFIRMED,
             occurred_at=payment.created_at,
             created_by=user_id,
+            session_user_id=session_user_id,
         )
 
         cashbox_repo.adjust_balance_for_transaction(
@@ -167,6 +169,7 @@ class PaymentService:
             self,
             *,
             current_user: User,
+            session_user: User,
             payload: CreatePaymentRequestSchema,
     ):
         if not current_user.clinic_id:
@@ -218,6 +221,7 @@ class PaymentService:
                 tip_amount=manual_tip,
                 method=method,
                 created_by=current_user.user_id,
+                session_user_id=session_user.user_id,
             )
 
             self._create_tip_from_payment(
@@ -227,11 +231,13 @@ class PaymentService:
                 patient_id=patient_id,
                 plan_id=plan_id,
                 created_by=current_user.user_id,
+                session_user_id=session_user.user_id,
             )
 
             err = self._auto_cash_for_payment(
                 clinic_id=clinic_id,
                 user_id=current_user.user_id,
+                session_user_id=session_user.user_id,
                 payment=payment,
                 cashbox_id=payload.cashbox_id,
                 total_cash=manual_tip,

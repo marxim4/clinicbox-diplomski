@@ -52,13 +52,16 @@ class DailyClose(db.Model):
         ForeignKey("user.user_id"),
         nullable=True,
     )
+    session_user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=False,
+    )
 
     closed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,
         nullable=False,
     )
-
 
     clinic: Mapped["Clinic"] = relationship(
         "Clinic",
@@ -80,6 +83,12 @@ class DailyClose(db.Model):
         "User",
         foreign_keys=[approved_by],
         back_populates="approved_closes",
+    )
+
+    session_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[session_user_id],
+        back_populates="sessions_closes",
     )
 
     def __repr__(self) -> str:

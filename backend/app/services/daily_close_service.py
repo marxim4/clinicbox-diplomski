@@ -14,6 +14,7 @@ class DailyCloseService:
     def create_daily_close(
         self,
         current_user: User,
+        session_user: User,
         payload: CreateDailyCloseRequestSchema,
     ):
         clinic_id = current_user.clinic_id
@@ -40,6 +41,7 @@ class DailyCloseService:
 
         _adjust_result, adjust_error = cash_service.adjust_cashbox_to_counted(
             current_user=current_user,
+            session_user=session_user,
             cashbox_id=cashbox.cashbox_id,
             counted_total=counted_total,
             note=payload.note,
@@ -56,6 +58,7 @@ class DailyCloseService:
             variance=variance,
             note=payload.note,
             closed_by=current_user.user_id,
+            session_user_id=session_user.user_id,
             approved_by=None,
         )
         return close, None

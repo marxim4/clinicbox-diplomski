@@ -37,6 +37,7 @@ def _serialize_user(user):
 
 
 @bp.post("")
+@login_required
 @owner_only
 @use_schema(CreateUserRequestSchema)
 def create_user(data: CreateUserRequestSchema):
@@ -60,11 +61,11 @@ def create_user(data: CreateUserRequestSchema):
 
 
 @bp.get("")
+@login_required
 @owner_only
 def list_users():
     owner = g.current_user
 
-    # read from query string: ?page=1&page_size=20
     page = request.args.get("page", type=int)
     page_size = request.args.get("page_size", type=int)
 
@@ -90,7 +91,6 @@ def list_users():
         ),
         HTTPStatus.OK,
     )
-
 
 
 @bp.get("/me")
@@ -140,6 +140,7 @@ def change_my_pin(data: ChangePinRequestSchema):
 
 
 @bp.patch("/<int:user_id>")
+@login_required
 @owner_only
 @use_schema(UpdateUserRequestSchema)
 def update_user(user_id: int, data: UpdateUserRequestSchema):
@@ -161,6 +162,7 @@ def update_user(user_id: int, data: UpdateUserRequestSchema):
 
 
 @bp.patch("/<int:user_id>/status")
+@login_required
 @owner_only
 @use_schema(SetUserStatusRequestSchema)
 def set_user_status(user_id: int, data: SetUserStatusRequestSchema):

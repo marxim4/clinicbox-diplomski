@@ -90,6 +90,9 @@ class CreateCashTransactionRequestSchema(BaseModel):
     note: Optional[str] = None
     occurred_at: Optional[datetime] = None
 
+    pin: Optional[str] = None
+    acting_user_id: Optional[int] = None
+
     @field_validator("amount")
     @classmethod
     def normalize_amount(cls, v: float) -> float:
@@ -126,4 +129,5 @@ class CashTransactionResponseSchema(BaseModel):
     note: Optional[str]
 
     created_by: int
-    approved_by: Optional[int]
+    session_user_id: Optional[int]
+    approved_by: Optional[int] = None

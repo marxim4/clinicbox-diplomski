@@ -27,6 +27,7 @@ class CashTransactionRepository:
             status: TransactionStatus,
             occurred_at: datetime | None,
             created_by: int,
+            session_user_id: int,
             approved_by: int | None = None,
     ):
         tx = CashTransaction(
@@ -42,6 +43,7 @@ class CashTransactionRepository:
             status=status,
             note=note,
             created_by=created_by,
+            session_user_id=session_user_id,
             approved_by=approved_by,
         )
         db.session.add(tx)

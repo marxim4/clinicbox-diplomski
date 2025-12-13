@@ -71,6 +71,34 @@ class User(db.Model):
         foreign_keys="Payment.approved_by",
     )
 
+    # Payments where this user was the logged-in session
+    sessions_payments: Mapped[List["Payment"]] = relationship(
+        "Payment",
+        back_populates="session_user",
+        foreign_keys="Payment.session_user_id",
+    )
+
+    # Cash Transactions where this user was the logged-in session
+    sessions_transactions: Mapped[List["CashTransaction"]] = relationship(
+        "CashTransaction",
+        back_populates="session_user",
+        foreign_keys="CashTransaction.session_user_id",
+    )
+
+    # Daily Closes where this user was the logged-in session
+    sessions_closes: Mapped[List["DailyClose"]] = relationship(
+        "DailyClose",
+        back_populates="session_user",
+        foreign_keys="DailyClose.session_user_id",
+    )
+
+    # Tip Payouts where this user was the logged-in session
+    sessions_payouts: Mapped[List["TipPayout"]] = relationship(
+        "TipPayout",
+        back_populates="session_user",
+        foreign_keys="TipPayout.session_user_id",
+    )
+
     # Dual sign-off on cash transactions
     created_transactions: Mapped[List["CashTransaction"]] = relationship(
         "CashTransaction",

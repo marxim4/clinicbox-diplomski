@@ -37,6 +37,7 @@ class DailyCloseRepository:
         variance: float,
         note: str | None,
         closed_by: int,
+        session_user_id: int,
         approved_by: int | None = None,
     ):
         close = DailyClose(
@@ -48,6 +49,7 @@ class DailyCloseRepository:
             variance=variance,
             note=note,
             closed_by=closed_by,
+            session_user_id=session_user_id,
             approved_by=approved_by,
         )
         db.session.add(close)

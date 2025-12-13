@@ -34,6 +34,11 @@ class TipPayout(db.Model):
         nullable=False,
     )
 
+    session_user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=False,
+    )
+
     note: Mapped[str | None] = mapped_column(Text)
 
     cash_transaction: Mapped["CashTransaction"] = relationship(
@@ -45,6 +50,11 @@ class TipPayout(db.Model):
     clinic: Mapped["Clinic"] = relationship("Clinic")
     doctor: Mapped["User"] = relationship("User", foreign_keys=[doctor_id])
     created_by_user: Mapped["User"] = relationship("User", foreign_keys=[created_by])
+    session_user: Mapped["User"] = relationship(
+        "User",
+        back_populates="sessions_payouts",
+        foreign_keys=[session_user_id],
+    )
 
     def __repr__(self) -> str:
         return f"<TipPayout {self.payout_id} doctor={self.doctor_id} amount={self.amount}>"

@@ -66,7 +66,10 @@ class Payment(db.Model):
         ForeignKey("user.user_id"),
         nullable=True,
     )
-
+    session_user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=False,
+    )
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="payments")
     patient: Mapped["Patient"] = relationship("Patient", back_populates="payments")
@@ -82,6 +85,11 @@ class Payment(db.Model):
         "User",
         back_populates="approved_payments",
         foreign_keys=[approved_by],
+    )
+    session_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[session_user_id],
+        back_populates="sessions_payments",
     )
 
     cash_transaction: Mapped["CashTransaction"] = relationship(
