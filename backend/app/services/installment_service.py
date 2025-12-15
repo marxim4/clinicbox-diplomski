@@ -119,6 +119,15 @@ class InstallmentService:
         )
 
         if payload.installments is not None:
+            has_payments = False
+            for inst in plan.installments:
+                if (inst.amount_paid or 0) > 0:
+                    has_payments = True
+                    break
+
+            if has_payments:
+                return None, "cannot change installments because payments have already been made"
+
             installments_data = [
                 {
                     "due_date": inst.due_date,
@@ -167,6 +176,23 @@ class InstallmentService:
             page=page,
             page_size=page_size,
         )
+
+    def cancel_plan(
+            self,
+            current_user: User,
+            plan_id: int
+    ):
+        if not current_user.clinic_id:
+            return None, "user has no clinic assigned"
+
+        clinic_id = current_user.clinic_id
+        plan = installment_plan_repo.get_plan_in_clinic(plan_id, clinic_id)
+        if not plan:
+            return None, "plan not found"
+
+        installment_plan_repo.update_plan_basic(plan, status=PlanStatus.CANCELLED)
+
+        return plan, None
 
 
 installment_service = InstallmentService()

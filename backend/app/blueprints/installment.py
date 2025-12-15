@@ -276,3 +276,22 @@ def list_overdue_installments():
         ),
         HTTPStatus.OK,
     )
+
+
+@bp.post("/<int:plan_id>/cancel")
+@login_required
+def cancel_plan(plan_id: int):
+    current_user = g.current_user
+
+    plan, error = installment_service.cancel_plan(current_user, plan_id)
+    if error:
+        if error == "plan not found":
+            return jsonify(msg=error), HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    db.session.commit()
+
+    return (
+        jsonify(msg="installment plan cancelled", plan=_serialize_plan(plan)),
+        HTTPStatus.OK,
+    )
