@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from http import HTTPStatus
 
 from flask import Blueprint, jsonify, g, request
@@ -24,6 +25,8 @@ def _serialize_patient(patient):
         clinic_id=patient.clinic_id,
         first_name=patient.first_name,
         last_name=patient.last_name,
+        middle_name=patient.middle_name,
+        birth_date=patient.birth_date,
         phone=patient.phone,
         email=patient.email,
         note=patient.note,
@@ -167,9 +170,18 @@ def search_patients():
     q = request.args.get("q", type=str)
     first_name = request.args.get("first_name", type=str)
     last_name = request.args.get("last_name", type=str)
+    middle_name = request.args.get("middle_name", type=str)
     phone = request.args.get("phone", type=str)
     email = request.args.get("email", type=str)
     doctor_id = request.args.get("doctor_id", type=int)
+
+    birth_date_str = request.args.get("birth_date", type=str)
+    birth_date = None
+    if birth_date_str:
+        try:
+            birth_date = date.fromisoformat(birth_date_str)
+        except ValueError:
+            return jsonify(msg="invalid birth_date format, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
 
     page = request.args.get("page", type=int)
     page_size = request.args.get("page_size", type=int)
@@ -179,6 +191,8 @@ def search_patients():
         q=q,
         first_name=first_name,
         last_name=last_name,
+        middle_name=middle_name,
+        birth_date=birth_date,
         phone=phone,
         email=email,
         doctor_id=doctor_id,
@@ -201,3 +215,18 @@ def search_patients():
         ),
         HTTPStatus.OK,
     )
+
+
+@bp.delete("/<int:patient_id>")
+@login_required
+def delete_patient(patient_id: int):
+    current_user = g.current_user
+
+    success, error = patient_service.archive_patient(current_user, patient_id)
+    if not success:
+        if error == "patient not found":
+            return jsonify(msg=error), HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    db.session.commit()
+    return jsonify(msg="patient archived"), HTTPStatus.OK

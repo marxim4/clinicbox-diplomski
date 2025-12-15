@@ -1,4 +1,7 @@
-from sqlalchemy import Integer, String, ForeignKey, Text, UniqueConstraint
+from typing import List
+from datetime import date  # <--- Import standard date
+
+from sqlalchemy import Integer, String, ForeignKey, Text, UniqueConstraint, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -18,6 +21,10 @@ class Patient(db.Model):
 
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    middle_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     phone: Mapped[str | None] = mapped_column(String(50))
     email: Mapped[str | None] = mapped_column(String(120), nullable=True)
     note: Mapped[str | None] = mapped_column(Text)
@@ -26,6 +33,8 @@ class Patient(db.Model):
         ForeignKey("user.user_id"),
         nullable=False,
     )
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="patients")
     doctor: Mapped["User"] = relationship("User", back_populates="patients")

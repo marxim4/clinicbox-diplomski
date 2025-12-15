@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator, model_validator, ConfigDict
@@ -8,6 +9,10 @@ from pydantic import BaseModel, EmailStr, field_validator, model_validator, Conf
 class CreatePatientRequestSchema(BaseModel):
     first_name: str
     last_name: str
+
+    middle_name: Optional[str] = None
+    birth_date: Optional[date] = None
+
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     note: Optional[str] = None
@@ -15,11 +20,19 @@ class CreatePatientRequestSchema(BaseModel):
 
     @field_validator("first_name", "last_name")
     @classmethod
-    def strip_nonempty(cls, v: str) -> str:
+    def strip_nonempty_title(cls, v: str) -> str:
         v2 = v.strip()
         if not v2:
             raise ValueError("must not be empty")
-        return v2
+        return v2.title()
+
+    @field_validator("middle_name")
+    @classmethod
+    def strip_title_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v2 = v.strip()
+        return v2.title() or None
 
     @field_validator("phone")
     @classmethod
@@ -48,20 +61,34 @@ class CreatePatientRequestSchema(BaseModel):
 class UpdatePatientRequestSchema(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+
+    middle_name: Optional[str] = None
+    birth_date: Optional[date] = None
+
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     note: Optional[str] = None
     doctor_id: Optional[int] = None
 
+    is_active: Optional[bool] = None
+
     @field_validator("first_name", "last_name")
     @classmethod
-    def strip_name(cls, v: Optional[str]) -> Optional[str]:
+    def strip_name_title(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
         v2 = v.strip()
         if not v2:
             raise ValueError("must not be empty")
-        return v2
+        return v2.title()
+
+    @field_validator("middle_name")
+    @classmethod
+    def strip_title_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v2 = v.strip()
+        return v2.title() or None
 
     @field_validator("phone")
     @classmethod
@@ -92,6 +119,8 @@ class UpdatePatientRequestSchema(BaseModel):
                 [
                     self.first_name is not None,
                     self.last_name is not None,
+                    self.middle_name is not None,
+                    self.birth_date is not None,
                     self.phone is not None,
                     self.email is not None,
                     self.note is not None,
@@ -109,7 +138,13 @@ class PatientResponseSchema(BaseModel):
     clinic_id: int
     first_name: str
     last_name: str
+
+    middle_name: Optional[str] = None
+    birth_date: Optional[date] = None
+
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     note: Optional[str] = None
     doctor_id: int
+
+    is_active: bool
