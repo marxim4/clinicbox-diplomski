@@ -131,17 +131,25 @@ class CashService:
             payload: CreateCashTransactionRequestSchema,
     ):
         clinic_id = current_user.clinic_id
-        if not clinic_id:
-            return None, "user has no clinic assigned"
+        if not clinic_id: return None, "user has no clinic assigned"
 
+        clinic = clinic_repo.get_by_id(clinic_id)
+
+        # 1. Determine Status
+        status = TransactionStatus.CONFIRMED.value
+
+        # Logic: If clinic requires approval AND user is a Junior (requires approval)
+        if clinic.requires_cash_approval and current_user.requires_approval_for_actions:
+            status = TransactionStatus.PENDING.value
+
+        # 2. Validation
         cashbox, err = self._ensure_cashbox_in_clinic(clinic_id, payload.cashbox_id)
-        if err:
-            return None, err
+        if err: return None, err
 
         link_error = self._resolve_links_for_transaction(clinic_id, payload)
-        if link_error:
-            return None, link_error
+        if link_error: return None, link_error
 
+        # 3. Create Record
         tx = cash_tx_repo.create_transaction(
             clinic_id=clinic_id,
             cashbox_id=cashbox.cashbox_id,
@@ -152,23 +160,59 @@ class CashService:
             tip_id=payload.tip_id,
             tip_payout_id=payload.tip_payout_id,
             note=payload.note,
-            status=TransactionStatus.CONFIRMED,
+            status=status,  # <--- Set Status
             occurred_at=payload.occurred_at,
             created_by=current_user.user_id,
             session_user_id=session_user.user_id,
         )
 
-        cashbox_repo.adjust_balance_for_transaction(
-            cashbox,
-            payload.type,
-            float(payload.amount),
-        )
+        # 4. Affect Balance (ONLY IF CONFIRMED)
+        if status == TransactionStatus.CONFIRMED.value:
+            cashbox_repo.adjust_balance_for_transaction(
+                cashbox,
+                payload.type,
+                float(payload.amount),
+            )
+            # Increment category usage
+            if payload.category_id is not None:
+                category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
+                if category:
+                    category_repo.increment_usage(category, datetime.utcnow())
 
-        if payload.category_id is not None:
-            category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
+        return tx, None
+
+    def approve_transaction(self, approver: User, tx_id: int) -> Tuple[Optional[CashTransaction], Optional[str]]:
+        """
+        Finalizes a PENDING Manual Transaction (Expense/Deposit).
+        """
+        if not approver.can_approve_financials:
+            return None, "permission denied"
+
+        tx = cash_tx_repo.get_by_id_in_clinic(tx_id, approver.clinic_id)
+        if not tx: return None, "transaction not found"
+
+        if tx.status != TransactionStatus.PENDING.value:
+            return None, "transaction is not pending"
+
+        # 1. Update Status
+        tx.status = TransactionStatus.CONFIRMED.value
+        tx.approved_by = approver.user_id
+
+        # 2. Affect Balance NOW
+        # We need to fetch the cashbox to adjust it
+        cashbox = cashbox_repo.get_in_clinic(tx.cashbox_id, approver.clinic_id)
+        if cashbox:
+            cashbox_repo.adjust_balance_for_transaction(
+                cashbox,
+                tx.type,
+                float(tx.amount)
+            )
+
+        # 3. Update Category Usage
+        if tx.category_id:
+            category = category_repo.get_by_id_in_clinic(tx.category_id, approver.clinic_id)
             if category:
-                from datetime import datetime as _dt
-                category_repo.increment_usage(category, _dt.utcnow())
+                category_repo.increment_usage(category, datetime.utcnow())
 
         return tx, None
 

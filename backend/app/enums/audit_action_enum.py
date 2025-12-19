@@ -6,4 +6,5 @@ class AuditAction(str, Enum):
     UPDATE = "UPDATE"
     DELETE = "DELETE"
     APPROVE = "APPROVE"
+    REJECT = "REJECT"
     CLOSE_DAY = "CLOSE_DAY"

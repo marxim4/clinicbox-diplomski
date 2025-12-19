@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, date, timedelta
-from typing import Optional, Tuple, List
+from typing import Optional, List, Tuple
 
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func
 
 from ..extensions import db
 from ..models import CashTransaction
@@ -12,6 +12,14 @@ from ..utils.pagination import validate_pagination, page_meta
 
 
 class CashTransactionRepository:
+    def get_by_id_in_clinic(self, tx_id: int, clinic_id: int) -> Optional[CashTransaction]:
+        return db.session.scalar(
+            select(CashTransaction).where(
+                CashTransaction.tx_id == tx_id,
+                CashTransaction.clinic_id == clinic_id
+            )
+        )
+
     def create_transaction(
             self,
             *,
@@ -24,7 +32,7 @@ class CashTransactionRepository:
             tip_id: int | None,
             tip_payout_id: int | None,
             note: str | None,
-            status: TransactionStatus,
+            status: str,  # Updated to str to match Model
             occurred_at: datetime | None,
             created_by: int,
             session_user_id: int,
@@ -56,7 +64,7 @@ class CashTransactionRepository:
             *,
             cashbox_id: int | None = None,
             type: CashTransactionType | None = None,
-            status: TransactionStatus | None = None,
+            status: str | None = None,  # Updated to str
             category_id: int | None = None,
             payment_id: int | None = None,
             date_from: datetime | date | None = None,
@@ -84,11 +92,9 @@ class CashTransactionRepository:
         if date_from is not None:
             base = base.where(CashTransaction.occurred_at >= date_from)
         if date_to is not None:
-            # Fix: If it's a datetime at midnight, add 1 day and use < to include the full day
             if isinstance(date_to, datetime) and date_to.hour == 0:
                 base = base.where(CashTransaction.occurred_at < date_to + timedelta(days=1))
             else:
-                # It's a date object or a specific time, keep original logic
                 base = base.where(CashTransaction.occurred_at <= date_to)
 
         if min_amount is not None:
@@ -127,6 +133,8 @@ class CashTransactionRepository:
         base = select(CashTransaction).where(
             CashTransaction.clinic_id == clinic_id,
             CashTransaction.cashbox_id == cashbox_id,
+            # CRITICAL: Only count confirmed transactions!
+            CashTransaction.status == TransactionStatus.CONFIRMED.value
         )
 
         if date_from is not None:

@@ -32,16 +32,7 @@ def _serialize_tip(tip):
 
 
 def _serialize_payout(payout):
-    return TipPayoutResponseSchema(
-        payout_id=payout.payout_id,
-        clinic_id=payout.clinic_id,
-        doctor_id=payout.doctor_id,
-        amount=float(payout.amount),
-        note=payout.note,
-        created_at=payout.created_at,
-        created_by=payout.created_by,
-        session_user_id=payout.session_user_id,
-    ).model_dump()
+    return TipPayoutResponseSchema.model_validate(payout).model_dump()
 
 
 @bp.post("")
@@ -87,6 +78,7 @@ def list_tips_for_patient(patient_id: int):
 @bp.get("/plan/<int:plan_id>")
 @login_required
 def list_tips_for_plan(plan_id: int):
+    # Clinic check implicitly handled by Service if needed, or we rely on ID logic
     tips = tip_service.list_tips_for_plan(plan_id)
     return (
         jsonify(tips=[_serialize_tip(t) for t in tips]),
@@ -135,6 +127,24 @@ def create_tip_payout(doctor_id: int, data: CreateTipPayoutRequestSchema):
         jsonify(msg="tip payout created", payout=_serialize_payout(payout)),
         HTTPStatus.CREATED,
     )
+
+
+@bp.post("/payout/<int:payout_id>/approve")
+@login_required
+def approve_tip_payout(payout_id: int):
+    current_user = g.current_user
+
+    payout, error = tip_service.approve_payout(current_user, payout_id)
+
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error: status = HTTPStatus.FORBIDDEN
+        if "not found" in error: status = HTTPStatus.NOT_FOUND
+        if "balance" in error: status = HTTPStatus.CONFLICT
+        return jsonify(msg=error), status
+
+    db.session.commit()
+    return jsonify(msg="tip payout approved", payout=_serialize_payout(payout)), HTTPStatus.OK
 
 
 @bp.get("/doctor/<int:doctor_id>/payouts")

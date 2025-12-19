@@ -7,20 +7,31 @@ from sqlalchemy import select, func
 
 from ..extensions import db
 from ..models import TipPayout
+from ..enums import TransactionStatus
 
 
 class TipPayoutRepository:
+    def get_by_id_in_clinic(self, payout_id: int, clinic_id: int) -> Optional[TipPayout]:
+        return db.session.scalar(
+            select(TipPayout).where(
+                TipPayout.payout_id == payout_id,
+                TipPayout.clinic_id == clinic_id
+            )
+        )
 
     def create_payout(
-        self,
-        *,
-        clinic_id: int,
-        doctor_id: int,
-        amount: float,
-        created_by: int,
-        session_user_id: int,
-        note: str | None = None,
-    ) :
+            self,
+            *,
+            clinic_id: int,
+            doctor_id: int,
+            amount: float,
+            created_by: int,
+            session_user_id: int,
+            note: str | None = None,
+            # New Params
+            status: str,
+            approved_by: int | None = None,
+    ):
         payout = TipPayout(
             clinic_id=clinic_id,
             doctor_id=doctor_id,
@@ -28,15 +39,17 @@ class TipPayoutRepository:
             created_by=created_by,
             session_user_id=session_user_id,
             note=note,
+            status=status,
+            approved_by=approved_by,
         )
         db.session.add(payout)
         db.session.flush()
         return payout
 
     def list_payouts_for_doctor(
-        self,
-        clinic_id: int,
-        doctor_id: int,
+            self,
+            clinic_id: int,
+            doctor_id: int,
     ) :
         stmt = (
             select(TipPayout)
@@ -49,20 +62,21 @@ class TipPayoutRepository:
         return db.session.scalars(stmt).all()
 
     def sum_payouts_for_doctor(
-        self,
-        clinic_id: int,
-        doctor_id: int,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
-    ) :
+            self,
+            clinic_id: int,
+            doctor_id: int,
+            date_from: Optional[datetime] = None,
+            date_to: Optional[datetime] = None,
+    ):
         stmt = select(func.coalesce(func.sum(TipPayout.amount), 0)).where(
             TipPayout.clinic_id == clinic_id,
             TipPayout.doctor_id == doctor_id,
+            TipPayout.status == TransactionStatus.CONFIRMED.value
         )
+
         if date_from is not None:
             stmt = stmt.where(TipPayout.created_at >= date_from)
         if date_to is not None:
-            # If it's midnight (00:00:00), we assume inclusive end date -> < next day
             if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
                 stmt = stmt.where(TipPayout.created_at < date_to + timedelta(days=1))
             else:

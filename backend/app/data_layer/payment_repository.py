@@ -97,6 +97,8 @@ class PaymentRepository:
             method: PaymentMethod,
             created_by: int,
             session_user_id: int,
+            status: str,
+            target_cashbox_id: int | None = None,
     ):
         payment = Payment(
             clinic_id=clinic_id,
@@ -109,6 +111,8 @@ class PaymentRepository:
             method=method,
             created_by=created_by,
             session_user_id=session_user_id,
+            status=status,
+            target_cashbox_id=target_cashbox_id,
         )
         db.session.add(payment)
         db.session.flush()

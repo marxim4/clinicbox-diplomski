@@ -8,7 +8,7 @@ from sqlalchemy import (
     Numeric,
     DateTime,
     Text,
-    Enum,
+    Enum, String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -66,9 +66,9 @@ class CashTransaction(db.Model):
         nullable=False,
     )
 
-    status: Mapped[TransactionStatus] = mapped_column(
-        Enum(TransactionStatus),
-        default=TransactionStatus.PENDING,
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default=TransactionStatus.PENDING.value,
         nullable=False,
     )
 

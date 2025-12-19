@@ -7,10 +7,11 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     DateTime,
-    Enum,
+    Enum, String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..enums.payment_status_enum import PaymentStatus
 from ..extensions import db
 from ..enums import PaymentMethod
 
@@ -62,6 +63,11 @@ class Payment(db.Model):
         ForeignKey("user.user_id"),
         nullable=False,
     )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default=PaymentStatus.PAID.value,
+        nullable=False
+    )
     approved_by: Mapped[int | None] = mapped_column(
         ForeignKey("user.user_id"),
         nullable=True,
@@ -69,6 +75,10 @@ class Payment(db.Model):
     session_user_id: Mapped[int] = mapped_column(
         ForeignKey("user.user_id"),
         nullable=False,
+    )
+    target_cashbox_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cashbox.cashbox_id"),
+        nullable=True,
     )
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="payments")
@@ -96,6 +106,11 @@ class Payment(db.Model):
         "CashTransaction",
         back_populates="payment",
         uselist=False,
+    )
+
+    target_cashbox: Mapped["Cashbox"] = relationship(
+        "Cashbox",
+        foreign_keys=[target_cashbox_id]
     )
 
     def __repr__(self) -> str:

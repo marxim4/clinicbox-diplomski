@@ -36,16 +36,43 @@ def create_cash_transaction(data: CreateCashTransactionRequestSchema):
         session_user=session_user,
         payload=data
     )
-    if error == "cashbox not found in this clinic" or error == "cashbox not found":
-        return jsonify(msg=error), HTTPStatus.NOT_FOUND
+
     if error:
+        if "not found" in error:
+            return jsonify(msg=error), HTTPStatus.NOT_FOUND
         return jsonify(msg=error), HTTPStatus.BAD_REQUEST
 
     db.session.commit()
+
+    # If the logic decided it was PENDING, the frontend sees that in the response
     return (
         jsonify(msg="cash transaction created", transaction=_serialize_tx(tx)),
         HTTPStatus.CREATED,
     )
+
+
+@bp.post("/<int:tx_id>/approve")
+@login_required
+def approve_transaction(tx_id: int):
+    # Approval is usually done by the logged-in Manager (no PIN swap needed),
+    # but they must have 'can_approve_financials=True'
+    current_user = g.current_user
+
+    tx, error = cash_service.approve_transaction(current_user, tx_id)
+
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error:
+            status = HTTPStatus.FORBIDDEN
+        elif "not found" in error:
+            status = HTTPStatus.NOT_FOUND
+        elif "not pending" in error:
+            status = HTTPStatus.CONFLICT
+
+        return jsonify(msg=error), status
+
+    db.session.commit()
+    return jsonify(msg="transaction approved", transaction=_serialize_tx(tx)), HTTPStatus.OK
 
 
 @bp.get("")
@@ -74,7 +101,8 @@ def search_transactions():
     status = None
     if status_str:
         try:
-            status = TransactionStatus[status_str.upper()]
+            st_enum = TransactionStatus[status_str.upper()]
+            status = st_enum.value
         except KeyError:
             return jsonify(msg=f"invalid status '{status_str}'"), HTTPStatus.BAD_REQUEST
 

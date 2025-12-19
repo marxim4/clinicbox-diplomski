@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Integer, ForeignKey, Numeric, DateTime, Text
+from sqlalchemy import Integer, ForeignKey, Numeric, DateTime, Text, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..enums import TransactionStatus
 from ..extensions import db
 
 
@@ -33,7 +34,15 @@ class TipPayout(db.Model):
         ForeignKey("user.user_id"),
         nullable=False,
     )
-
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default=TransactionStatus.CONFIRMED.value,
+        nullable=False
+    )
+    approved_by: Mapped[int | None] = mapped_column(
+        ForeignKey("user.user_id"),
+        nullable=True,
+    )
     session_user_id: Mapped[int] = mapped_column(
         ForeignKey("user.user_id"),
         nullable=False,
@@ -50,6 +59,11 @@ class TipPayout(db.Model):
     clinic: Mapped["Clinic"] = relationship("Clinic")
     doctor: Mapped["User"] = relationship("User", foreign_keys=[doctor_id])
     created_by_user: Mapped["User"] = relationship("User", foreign_keys=[created_by])
+    approved_by_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[approved_by],
+        back_populates="approved_payouts"
+    )
     session_user: Mapped["User"] = relationship(
         "User",
         back_populates="sessions_payouts",

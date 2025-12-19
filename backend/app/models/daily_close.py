@@ -8,10 +8,11 @@ from sqlalchemy import (
     Numeric,
     Date,
     DateTime,
-    Text,
+    Text, String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..enums.daily_close_status_enum import DailyCloseStatus
 from ..extensions import db
 
 
@@ -47,6 +48,11 @@ class DailyClose(db.Model):
     closed_by: Mapped[int] = mapped_column(
         ForeignKey("user.user_id"),
         nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default=DailyCloseStatus.APPROVED,
+        nullable=False
     )
     approved_by: Mapped[int | None] = mapped_column(
         ForeignKey("user.user_id"),

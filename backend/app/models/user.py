@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from sqlalchemy import String, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, ForeignKey, UniqueConstraint, Boolean, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db, bcrypt
@@ -30,11 +30,21 @@ class User(db.Model):
 
     is_active: Mapped[bool] = mapped_column(default=True)
 
+    can_approve_financials: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    requires_approval_for_actions: Mapped[bool] = mapped_column(default=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "NOT (can_approve_financials IS TRUE AND requires_approval_for_actions IS TRUE)",
+            name="check_user_approval_logic"
+        ),
+    )
+
     # main clinic this user belongs to
     clinic: Mapped["Clinic"] = relationship(
         "Clinic",
         back_populates="users",
-        foreign_keys=[clinic_id],  # <-- important
+        foreign_keys=[clinic_id],
     )
 
     # clinic where this user is the OWNER (1–1)
@@ -44,8 +54,6 @@ class User(db.Model):
         uselist=False,
         foreign_keys="Clinic.owner_user_id",
     )
-
-    requires_approval_for_actions: Mapped[bool] = mapped_column(default=True)
 
     # Patients where this user is the primary doctor
     patients: Mapped[List["Patient"]] = relationship(
@@ -121,6 +129,12 @@ class User(db.Model):
         "DailyClose",
         back_populates="approved_by_user",
         foreign_keys="DailyClose.approved_by",
+    )
+
+    approved_payouts: Mapped[List["TipPayout"]] = relationship(
+        "TipPayout",
+        back_populates="approved_by_user",
+        foreign_keys="TipPayout.approved_by",
     )
 
     def set_password(self, password: str) -> None:

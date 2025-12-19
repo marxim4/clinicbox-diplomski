@@ -49,7 +49,6 @@ class CreateTipPayoutRequestSchema(BaseModel):
 
 class TipPayoutResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     payout_id: int
     clinic_id: int
     doctor_id: int
@@ -57,4 +56,7 @@ class TipPayoutResponseSchema(BaseModel):
     note: Optional[str]
     created_at: datetime
     created_by: int
-    session_user_id: Optional[int] = None
+    session_user_id: int
+
+    status: str
+    approved_by: Optional[int] = None

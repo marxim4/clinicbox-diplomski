@@ -1,6 +1,6 @@
 from enum import Enum
 
-
 class TransactionStatus(str, Enum):
     PENDING = "PENDING"
-    APPROVED = "APPROVED"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"

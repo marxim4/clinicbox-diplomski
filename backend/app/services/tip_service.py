@@ -11,6 +11,7 @@ from ..data_layer.patient_repository import patient_repo
 from ..data_layer.installment_plan_repository import installment_plan_repo
 from ..data_layer.cashbox_repository import cashbox_repo
 from ..data_layer.cash_transaction_repository import cash_tx_repo
+from ..data_layer.clinic_repository import clinic_repo
 
 from ..schemas.tips import CreateTipRequestSchema
 from ..enums import CashTransactionType, TransactionStatus
@@ -24,6 +25,9 @@ class TipService:
             session_user_id: int,
             payout: TipPayout,
     ):
+        """
+        Creates the physical cash transaction (OUT) for a confirmed payout.
+        """
         cashbox = cashbox_repo.get_default_for_clinic(clinic_id)
         if not cashbox:
             # no cashbox yet – skip creating cash tx
@@ -31,6 +35,8 @@ class TipService:
 
         amount = float(payout.amount)
 
+        # We use the status value directly or the enum value depending on your DB setup.
+        # Assuming TransactionStatus.CONFIRMED.value is a string "CONFIRMED".
         cash_tx_repo.create_transaction(
             clinic_id=clinic_id,
             cashbox_id=cashbox.cashbox_id,
@@ -41,7 +47,7 @@ class TipService:
             tip_id=None,
             tip_payout_id=payout.payout_id,
             note=f"Tip payout #{payout.payout_id}",
-            status=TransactionStatus.CONFIRMED,
+            status=TransactionStatus.CONFIRMED.value,
             occurred_at=payout.created_at,
             created_by=user_id,
             session_user_id=session_user_id,
@@ -125,6 +131,8 @@ class TipService:
             "balance": balance,
         }
 
+    # -------- payouts --------
+
     def create_payout(
             self,
             current_user: User,
@@ -134,16 +142,24 @@ class TipService:
             note: str | None,
     ) -> Tuple[Optional[TipPayout], Optional[str]]:
         clinic_id = current_user.clinic_id
+        clinic = clinic_repo.get_by_id(clinic_id)
 
         doctor = user_repo.get_by_id_in_clinic(doctor_id, clinic_id)
         if not doctor:
             return None, "doctor not found in this clinic"
 
-        # optional safety: disallow paying more than current balance
+        # 1. Check Balance (Safety Check)
         balance = self.get_doctor_tip_balance(clinic_id, doctor_id)
         if amount > balance["balance"] + 0.0001:
             return None, "payout exceeds current tip balance"
 
+        # 2. Determine Status (Approval Logic)
+        status = TransactionStatus.CONFIRMED.value
+        # If clinic requires approval AND user is "Junior" (needs approval)
+        if clinic.requires_cash_approval and current_user.requires_approval_for_actions:
+            status = TransactionStatus.PENDING.value
+
+        # 3. Create Record
         payout = tip_payout_repo.create_payout(
             clinic_id=clinic_id,
             doctor_id=doctor_id,
@@ -151,12 +167,54 @@ class TipService:
             created_by=current_user.user_id,
             session_user_id=session_user.user_id,
             note=note,
+            status=status,
+            approved_by=current_user.user_id if status == TransactionStatus.CONFIRMED.value else None
         )
 
+        # 4. Move Money (ONLY IF CONFIRMED)
+        if status == TransactionStatus.CONFIRMED.value:
+            self._auto_cash_for_tip_payout(
+                clinic_id=clinic_id,
+                user_id=current_user.user_id,
+                session_user_id=session_user.user_id,
+                payout=payout,
+            )
+
+        return payout, None
+
+    def approve_payout(
+            self,
+            approver: User,
+            payout_id: int
+    ) -> Tuple[Optional[TipPayout], Optional[str]]:
+        """
+        Finalizes a PENDING tip payout.
+        """
+        if not approver.can_approve_financials:
+            return None, "permission denied"
+
+        payout = tip_payout_repo.get_by_id_in_clinic(payout_id, approver.clinic_id)
+        if not payout:
+            return None, "payout not found"
+
+        if payout.status != TransactionStatus.PENDING.value:
+            return None, "payout is not pending"
+
+        # 1. Re-Check Balance (Critical for race conditions)
+        # Since pending payouts didn't deduct yet, ensure funds are still there.
+        balance = self.get_doctor_tip_balance(approver.clinic_id, payout.doctor_id)
+        if float(payout.amount) > balance["balance"] + 0.0001:
+            return None, "cannot approve: payout amount exceeds current remaining balance"
+
+        # 2. Update Status
+        payout.status = TransactionStatus.CONFIRMED.value
+        payout.approved_by = approver.user_id
+
+        # 3. Move Money
         self._auto_cash_for_tip_payout(
-            clinic_id=clinic_id,
-            user_id=current_user.user_id,
-            session_user_id=session_user.user_id,
+            clinic_id=approver.clinic_id,
+            user_id=approver.user_id,
+            session_user_id=payout.session_user_id,
             payout=payout,
         )
 

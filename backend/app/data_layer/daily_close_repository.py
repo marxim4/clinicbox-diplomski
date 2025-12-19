@@ -38,6 +38,7 @@ class DailyCloseRepository:
         note: str | None,
         closed_by: int,
         session_user_id: int,
+        status: str,
         approved_by: int | None = None,
     ):
         close = DailyClose(
@@ -50,6 +51,7 @@ class DailyCloseRepository:
             note=note,
             closed_by=closed_by,
             session_user_id=session_user_id,
+            status=status,
             approved_by=approved_by,
         )
         db.session.add(close)

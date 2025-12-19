@@ -15,7 +15,7 @@ from flask_jwt_extended import (
 from sqlalchemy import select
 
 from ..extensions import db
-from ..models import User, Clinic
+from ..models import User, Clinic, Cashbox
 from ..enums import UserRole, ClinicType
 from ..schemas.auth import RegisterOwnerSchema, LoginSchema, ChangePasswordSchema
 from ..utils.validation import use_schema
@@ -62,28 +62,40 @@ def register_owner(data: RegisterOwnerSchema):
 
     clinic = Clinic(
         name=data.clinic_name.strip(),
-        address=(data.clinic_address or "").strip() or None,
-        currency=(data.currency or "EUR").strip() or "EUR",
-        default_language=(data.default_language or "en").strip() or "en",
         clinic_type=clinic_type,
+        currency=(data.currency or "EUR").strip(),
+        default_language=(data.default_language or "en").strip(),
+
+        requires_payment_approval=False,
+        requires_cash_approval=False,
+        requires_close_approval=False,
     )
     db.session.add(clinic)
     db.session.flush()
 
-    # Create Owner User
     owner_user = User(
         clinic_id=clinic.clinic_id,
         name=data.owner_name.strip(),
         email=data.email,
         role=data.owner_role,
         is_active=True,
-        requires_approval_for_actions=False,
+
+        can_approve_financials=True,
+        requires_approval_for_actions=False
     )
     owner_user.set_password(data.password)
     db.session.add(owner_user)
     db.session.flush()
 
     clinic.owner_user_id = owner_user.user_id
+
+    default_cashbox = Cashbox(
+        clinic_id=clinic.clinic_id,
+        name="Main Cashbox",
+        is_default=True,
+        current_amount=0.0
+    )
+    db.session.add(default_cashbox)
 
     db.session.commit()
 

@@ -52,6 +52,22 @@ def create_daily_close(data: CreateDailyCloseRequestSchema):
     )
 
 
+@bp.post("/<int:close_id>/approve")
+@login_required
+def approve_daily_close(close_id: int):
+    current_user = g.current_user
+
+    close, error = daily_close_service.approve_daily_close(current_user, close_id)
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error: status = HTTPStatus.FORBIDDEN
+        if "not found" in error: status = HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), status
+
+    db.session.commit()
+    return jsonify(msg="daily close approved", close=_serialize_close(close)), HTTPStatus.OK
+
+
 @bp.get("/<int:close_id>")
 @login_required
 def get_daily_close(close_id: int):

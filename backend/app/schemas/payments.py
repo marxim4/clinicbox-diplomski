@@ -39,11 +39,9 @@ class CreatePaymentRequestSchema(BaseModel):
         if a <= 0 and t <= 0:
             raise ValueError("Either amount or tip_amount must be greater than zero.")
 
-        # 2. If it's a debt payment -> require plan_id OR installment_id
         if a > 0 and not (self.plan_id or self.installment_id):
             raise ValueError("Debt payments require plan_id or installment_id.")
 
-        # 3. If it's a pure tip -> require doctor_id
         if a <= 0 and t > 0 and not (self.doctor_id or self.plan_id):
             raise ValueError(
                 "Pure tip requires doctor_id or must be linked to a plan_id."
@@ -70,3 +68,6 @@ class PaymentResponseSchema(BaseModel):
     created_by: int
     session_user_id: Optional[int]
     approved_by: Optional[int] = None
+
+    status: str
+    target_cashbox_id: Optional[int] = None

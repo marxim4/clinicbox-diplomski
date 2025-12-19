@@ -14,7 +14,7 @@ from ..schemas.payments import (
 )
 from ..schemas.pagination import PageMetaSchema
 from ..services.payment_service import payment_service
-from ..enums import PaymentMethod   # <-- make sure this is imported
+from ..enums import PaymentMethod
 
 bp = Blueprint("payments", __name__, url_prefix="/api/payments")
 
@@ -29,7 +29,6 @@ def _serialize_payment(payment):
 @require_pin
 def create_payment(data: CreatePaymentRequestSchema):
     acting_user = g.current_user
-
     session_user = getattr(g, "session_user", acting_user)
 
     payment, error = payment_service.create_payment(
@@ -41,8 +40,8 @@ def create_payment(data: CreatePaymentRequestSchema):
         status = (
             HTTPStatus.BAD_REQUEST
             if "not found" in error
-            or "already fully paid" in error
-            or "amount must be" in error
+               or "already fully paid" in error
+               or "amount must be" in error
             else HTTPStatus.BAD_REQUEST
         )
         return jsonify(msg=error), status
@@ -56,6 +55,30 @@ def create_payment(data: CreatePaymentRequestSchema):
         ),
         HTTPStatus.CREATED,
     )
+
+
+@bp.post("/<int:payment_id>/approve")
+@login_required
+def approve_payment(payment_id: int):
+    # This action is typically performed by the logged-in user (Owner/Manager)
+    # without needing to switch identities via PIN, though you could add @require_pin if you wanted.
+    current_user = g.current_user
+
+    payment, error = payment_service.approve_payment(current_user, payment_id)
+
+    if error:
+        if "permission denied" in error:
+            return jsonify(msg=error), HTTPStatus.FORBIDDEN
+        if "not found" in error:
+            return jsonify(msg=error), HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), HTTPStatus.BAD_REQUEST
+
+    db.session.commit()
+
+    return jsonify(
+        msg="payment approved",
+        payment=_serialize_payment(payment)
+    ), HTTPStatus.OK
 
 
 @bp.get("/<int:payment_id>")
