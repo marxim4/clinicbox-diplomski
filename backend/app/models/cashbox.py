@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from sqlalchemy import Integer, String, Text, ForeignKey, Boolean, Numeric
+from sqlalchemy import Integer, String, Text, ForeignKey, Boolean, Numeric, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -20,6 +20,9 @@ class Cashbox(db.Model):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     current_amount: Mapped[float] = mapped_column(
@@ -39,6 +42,16 @@ class Cashbox(db.Model):
     closes: Mapped[List["DailyClose"]] = relationship(
         "DailyClose",
         back_populates="cashbox",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_unique_default_per_clinic",
+            "clinic_id",
+            unique=True,
+            sqlite_where=(is_default == True),
+            postgresql_where=(is_default == True),
+        ),
     )
 
     def __repr__(self) -> str:

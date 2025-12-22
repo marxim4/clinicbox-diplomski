@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy import select
-
+from decimal import Decimal
+from sqlalchemy import select, update
 from ..enums import CashTransactionType
 from ..extensions import db
 from ..models import Cashbox
@@ -22,24 +22,47 @@ class CashboxRepository:
         stmt = base.order_by(Cashbox.name.asc())
         return db.session.scalars(stmt).all()
 
-    def get_default_for_clinic(self, clinic_id: int):
-        stmt = (
-            select(Cashbox)
-            .where(
-                Cashbox.clinic_id == clinic_id,
-                Cashbox.is_active.is_(True),
-            )
-            .order_by(Cashbox.cashbox_id.asc())
+    def get_default_for_clinic(self, clinic_id: int) -> Cashbox | None:
+        """
+        Fetch the cashbox marked explicitly as default.
+        """
+        stmt = select(Cashbox).where(
+            Cashbox.clinic_id == clinic_id,
+            Cashbox.is_default.is_(True)  # <--- NEW LOGIC
         )
         return db.session.scalar(stmt)
 
-    def create_cashbox(self, clinic_id: int, name: str, description: str | None):
+    def _unset_other_defaults(self, clinic_id: int):
+        """
+        Helper to ensure only one cashbox is default at a time.
+        We run this before setting a new one to True to satisfy the DB constraint.
+        """
+        stmt = (
+            update(Cashbox)
+            .where(Cashbox.clinic_id == clinic_id)
+            .where(Cashbox.is_default.is_(True))
+            .values(is_default=False)
+        )
+        db.session.execute(stmt)
+
+    def create_cashbox(self, clinic_id: int, name: str, description: str | None, is_default: bool = False):
+        # 1. If this is going to be default, unset others first to prevent DB crash
+        if is_default:
+            self._unset_other_defaults(clinic_id)
+
+        # 2. Create the new box
         cashbox = Cashbox(
             clinic_id=clinic_id,
             name=name,
             description=description,
             is_active=True,
+            # We set is_default manually after init if your model constructor acts up,
+            # but passing it as a kwarg usually works if defined in the model.
+            # Safe bet: set it below.
         )
+        if is_default:
+            cashbox.is_default = True
+
         db.session.add(cashbox)
         db.session.flush()
         return cashbox
@@ -50,6 +73,7 @@ class CashboxRepository:
             name: str | None = None,
             description: str | None = None,
             is_active: bool | None = None,
+            is_default: bool | None = None  # <--- Added parameter
     ):
         if name is not None:
             cashbox.name = name
@@ -57,17 +81,27 @@ class CashboxRepository:
             cashbox.description = description
         if is_active is not None:
             cashbox.is_active = is_active
+
+        # Handle default switching logic
+        if is_default is True and not cashbox.is_default:
+            self._unset_other_defaults(cashbox.clinic_id)
+            cashbox.is_default = True
+        elif is_default is False:
+            cashbox.is_default = False
+
         db.session.flush()
         return cashbox
 
     def adjust_balance_for_transaction(self, cashbox: Cashbox, tx_type, amount: float):
+        amount_dec = Decimal(str(amount))
+        current_dec = cashbox.current_amount if cashbox.current_amount is not None else Decimal("0.00")
+
         if tx_type == CashTransactionType.IN:
-            cashbox.current_amount = (cashbox.current_amount or 0) + amount
+            cashbox.current_amount = current_dec + amount_dec
         elif tx_type == CashTransactionType.OUT:
-            cashbox.current_amount = (cashbox.current_amount or 0) - amount
+            cashbox.current_amount = current_dec - amount_dec
         elif tx_type == CashTransactionType.ADJUSTMENT:
-            # adjustment can be + or -
-            cashbox.current_amount = (cashbox.current_amount or 0) + amount
+            cashbox.current_amount = current_dec + amount_dec
 
         db.session.flush()
         return cashbox

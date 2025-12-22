@@ -1,5 +1,5 @@
 from typing import List
-from datetime import date  # <--- Import standard date
+from datetime import date
 
 from sqlalchemy import Integer, String, ForeignKey, Text, UniqueConstraint, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,8 +42,8 @@ class Patient(db.Model):
     installment_plans: Mapped[List["InstallmentPlan"]] = relationship(
         "InstallmentPlan",
         back_populates="patient",
-        cascade="all, delete-orphan",
     )
+
     payments: Mapped[List["Payment"]] = relationship(
         "Payment",
         back_populates="patient",

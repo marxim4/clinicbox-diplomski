@@ -51,11 +51,19 @@ class Tip(db.Model):
         uselist=False
     )
 
-    doctor: Mapped["User"] = relationship("User")
+    doctor: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[doctor_id]
+    )
+
     clinic: Mapped["Clinic"] = relationship("Clinic")
     patient: Mapped["Patient"] = relationship("Patient")
     plan: Mapped["InstallmentPlan"] = relationship("InstallmentPlan")
-    created_by_user: Mapped["User"] = relationship("User", foreign_keys=[created_by])
+
+    created_by_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[created_by]
+    )
 
     def __repr__(self):
         return f"<Tip {self.tip_id} amount={self.amount}>"

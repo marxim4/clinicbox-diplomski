@@ -92,9 +92,9 @@ def register_owner(data: RegisterOwnerSchema):
     default_cashbox = Cashbox(
         clinic_id=clinic.clinic_id,
         name="Main Cashbox",
-        is_default=True,
         current_amount=0.0
     )
+    default_cashbox.is_default = True
     db.session.add(default_cashbox)
 
     db.session.commit()

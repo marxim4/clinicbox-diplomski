@@ -54,15 +54,19 @@ class InstallmentPlan(db.Model):
     patient: Mapped["Patient"] = relationship("Patient", back_populates="installment_plans")
     doctor: Mapped["User"] = relationship("User", back_populates="installment_plans")
 
+    # Installments are part of the plan definition, so they can be deleted if plan is deleted
     installments: Mapped[List["Installment"]] = relationship(
         "Installment",
         back_populates="plan",
         cascade="all, delete-orphan",
     )
 
+    # --- SAFETY CRITICAL: NO CASCADE HERE ---
+    # Payments must persist even if the plan object is deleted (for audit)
     payments: Mapped[List["Payment"]] = relationship(
         "Payment",
         back_populates="plan",
+        # cascade="all, delete-orphan"  <-- REMOVED
     )
 
     def __repr__(self) -> str:

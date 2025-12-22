@@ -23,6 +23,7 @@ def create_app(config_object=DevConfig) -> Flask:
 
     from .blueprints.auth import bp as auth_bp
     from .blueprints.users import bp as users_bp
+    from .blueprints.clinic import bp as clinic_bp
 
     from .blueprints.patients import bp as patients_bp
     from .blueprints.installment import bp as installment_bp
@@ -39,6 +40,7 @@ def create_app(config_object=DevConfig) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(clinic_bp)
 
     app.register_blueprint(patients_bp)
     app.register_blueprint(installment_bp)

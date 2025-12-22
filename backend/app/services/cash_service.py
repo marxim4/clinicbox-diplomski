@@ -8,7 +8,8 @@ from ..enums import CashTransactionType, TransactionStatus
 from ..data_layer.cashbox_repository import cashbox_repo
 from ..data_layer.cash_transaction_repository import cash_tx_repo
 from ..data_layer.payment_repository import payment_repo
-from ..data_layer.category_repository import category_repo  # if you have it, else remove
+from ..data_layer.category_repository import category_repo
+from ..data_layer.clinic_repository import clinic_repo
 from ..schemas.cash import (
     CreateCashboxRequestSchema,
     UpdateCashboxRequestSchema,

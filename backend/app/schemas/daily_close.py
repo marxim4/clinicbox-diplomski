@@ -1,24 +1,31 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date as DateType, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
-from pydantic.types import PositiveFloat
 
 
 class CreateDailyCloseRequestSchema(BaseModel):
     cashbox_id: int
-    date: Optional[date] = None  # if None -> today in service
-    counted_total: PositiveFloat
-    note: Optional[str] = None
+    date: DateType | None = None
 
-    pin: Optional[str] = None
-    acting_user_id: Optional[int] = None
+    counted_total: float
+
+    note: str | None = None
+    pin: str | None = None
+    acting_user_id: int | None = None
+
+    @field_validator("counted_total")
+    @classmethod
+    def validate_non_negative(cls, v: float):
+        if v < 0:
+            raise ValueError("Counted total cannot be negative")
+        return round(v, 2)
 
     @field_validator("note")
     @classmethod
-    def strip_note(cls, v: Optional[str]):
+    def strip_note(cls, v: str | None):
         if v is None:
             return v
         v2 = v.strip()
@@ -31,17 +38,17 @@ class DailyCloseResponseSchema(BaseModel):
     close_id: int
     clinic_id: int
     cashbox_id: int
-    date: date
+    date: DateType
 
     expected_total: float
     counted_total: float
     variance: float
 
-    note: Optional[str] = None
+    note: str | None = None
     created_at: datetime
 
     closed_by: int
     session_user_id: int
 
     status: str
-    approved_by: Optional[int] = None
+    approved_by: int | None = None

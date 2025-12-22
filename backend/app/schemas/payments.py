@@ -4,10 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-from pydantic.types import PositiveFloat
 
 from ..enums import PaymentMethod
-
 
 class CreatePaymentRequestSchema(BaseModel):
     plan_id: Optional[int] = None
@@ -15,7 +13,7 @@ class CreatePaymentRequestSchema(BaseModel):
 
     doctor_id: Optional[int] = None
 
-    amount: Optional[PositiveFloat] = None
+    amount: Optional[float] = None
     tip_amount: float = 0
 
     method: Optional[PaymentMethod] = None
@@ -28,6 +26,8 @@ class CreatePaymentRequestSchema(BaseModel):
     @classmethod
     def validate_amount(cls, v: Optional[float]) -> Optional[float]:
         if v is not None:
+            if v < 0:
+                raise ValueError("Amount cannot be negative")
             return round(v, 2)
         return v
 
@@ -36,12 +36,15 @@ class CreatePaymentRequestSchema(BaseModel):
         a = float(self.amount) if self.amount is not None else 0
         t = float(self.tip_amount or 0)
 
+        # Logic Check: At least one must be positive
         if a <= 0 and t <= 0:
             raise ValueError("Either amount or tip_amount must be greater than zero.")
 
+        # Logic Check: If paying debt (a > 0), we need a plan/installment
         if a > 0 and not (self.plan_id or self.installment_id):
             raise ValueError("Debt payments require plan_id or installment_id.")
 
+        # Logic Check: If Pure Tip (a=0, t>0), we need a recipient
         if a <= 0 and t > 0 and not (self.doctor_id or self.plan_id):
             raise ValueError(
                 "Pure tip requires doctor_id or must be linked to a plan_id."

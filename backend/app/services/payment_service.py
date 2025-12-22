@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+
 from datetime import date, datetime
 from typing import Optional, Tuple
+
+from ..extensions import db
 
 from ..models import User, InstallmentPlan, Installment, Payment
 from ..enums import (
@@ -378,6 +381,8 @@ class PaymentService:
         if status == PaymentStatus.PAID.value:
             # 1. Update Installments
             self._apply_payment_to_installments(plan, start_installment, debt_applied)
+
+            db.session.commit()
 
             # 2. Create Tip for total_tip (if any)
             self._create_tip_from_payment(
