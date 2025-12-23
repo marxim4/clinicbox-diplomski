@@ -36,13 +36,19 @@ class DailyCloseService:
 
         day = payload.date or DateType.today()
 
+        # --- FIX 1: Prevent Future Dates ---
+        if day > DateType.today():
+            return None, "cannot close register for a future date"
+
         existing = daily_close_repo.get_for_cashbox_and_date(
             clinic_id=clinic_id,
             cashbox_id=cashbox.cashbox_id,
             day=day,
         )
+        # --- FIX 2: Specific Error Message for Test ---
+        # The test asserts "already closed" is in the error string.
         if existing:
-            return None, "daily close already exists for this cashbox and date"
+            return None, "register is already closed for this date"
 
         expected_total = float(cashbox.current_amount or 0)
         counted_total = float(payload.counted_total)
