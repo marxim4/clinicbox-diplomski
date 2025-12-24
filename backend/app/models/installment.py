@@ -18,13 +18,10 @@ class Installment(db.Model):
         nullable=False,
     )
 
-    # Order of installment inside the plan
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Target due-date
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # Expected for this installment
     expected_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     amount_paid: Mapped[float] = mapped_column(

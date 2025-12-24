@@ -110,7 +110,6 @@ def list_plans():
     status: PlanStatus | None = None
     if status_param:
         try:
-            # must be one of: PLANNED, PARTIALLY_PAID, PAID, OVERDUE, CANCELLED
             status = PlanStatus[status_param.upper()]
         except KeyError:
             return jsonify(msg=f"invalid status '{status_param}'"), HTTPStatus.BAD_REQUEST
@@ -252,7 +251,7 @@ def list_overdue_installments():
         except ValueError:
             return jsonify(msg="invalid to_date, expected YYYY-MM-DD"), HTTPStatus.BAD_REQUEST
     else:
-        to_date = None  # service/repo will default to today
+        to_date = None
 
     page = request.args.get("page", type=int)
     page_size = request.args.get("page_size", type=int)

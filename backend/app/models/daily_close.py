@@ -31,16 +31,12 @@ class DailyClose(db.Model):
         nullable=False,
     )
 
-    # Business day being closed (e.g. 2025-11-21)
     date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # Calculated from transactions by the system
     expected_total: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
-    # Counted by staff
     counted_total: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
-    # counted_total - expected_total (can be negative)
     variance: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     note: Mapped[str | None] = mapped_column(Text)

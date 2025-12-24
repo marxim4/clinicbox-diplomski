@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class DailyCloseStatus(str, Enum):
+class TipPayoutStatus(str, Enum):
     PENDING = "PENDING"
-    APPROVED = "APPROVED"
+    PAID = "PAID"
     REJECTED = "REJECTED"

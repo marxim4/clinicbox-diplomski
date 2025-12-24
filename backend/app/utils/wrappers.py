@@ -11,7 +11,6 @@ from .helpers import load_current_user
 
 
 def login_required(fn):
-    # This remains the "Gatekeeper" that loads the user initially
     @wraps(fn)
     @jwt_required()
     def wrapper(*args, **kwargs):
@@ -26,7 +25,7 @@ def login_required(fn):
 def owner_only(fn):
     """
     Pure Permission Check.
-    Assumes g.current_user is already set (by @login_required or @require_pin).
+    Ensures the current user is the registered owner of the clinic.
     """
 
     @wraps(fn)
@@ -36,7 +35,10 @@ def owner_only(fn):
         if not user or not user.is_active or not user.clinic:
             return jsonify(msg="forbidden"), HTTPStatus.FORBIDDEN
 
-        if user.clinic.owner_user_id != user.user_id:
+        owner_id = str(user.clinic.owner_user_id) if user.clinic.owner_user_id else ""
+        current_id = str(user.user_id)
+
+        if owner_id != current_id:
             return jsonify(msg="forbidden"), HTTPStatus.FORBIDDEN
 
         return fn(*args, **kwargs)
@@ -71,23 +73,16 @@ def role_required(*allowed_roles: UserRole):
 def require_pin(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        # 1. Identity 1: The Session User (Logged into JWT)
         session_user = load_current_user()
         if not session_user:
             return jsonify(msg="unauthorized"), HTTPStatus.UNAUTHORIZED
 
-        # 2. Extract Data
-        # We need to peek at the JSON body, which @use_schema has validated
-        # but passing it via kwargs['data'] is safer if we ensure order.
         data_obj = kwargs.get("data")
         if not data_obj:
-            # Fallback if @use_schema didn't run or failed
             return jsonify(msg="Payload missing"), HTTPStatus.BAD_REQUEST
 
-        # 3. Identity 2: The Acting User (From Dropdown + PIN)
-        acting_user = session_user  # Default: same person
+        acting_user = session_user
 
-        # Check if a different user is selected
         provided_user_id = getattr(data_obj, "acting_user_id", None)
 
         if provided_user_id and provided_user_id != session_user.user_id:
@@ -95,12 +90,10 @@ def require_pin(fn):
             if not acting_user or acting_user.clinic_id != session_user.clinic_id:
                 return jsonify(msg="Invalid acting user"), HTTPStatus.FORBIDDEN
 
-        # 4. Check PIN Rules (on the ACTING user's clinic)
         clinic = acting_user.clinic
         if not clinic:
             return jsonify(msg="User has no clinic"), HTTPStatus.FORBIDDEN
 
-        # Logic: If general actions OR strict signoff requires PIN, we check it.
         is_required = clinic.require_pin_for_actions or clinic.require_pin_for_signoff
 
         if is_required:
@@ -113,7 +106,6 @@ def require_pin(fn):
 
             if not acting_user.check_pin(provided_pin):
                 return jsonify(msg="Invalid PIN"), HTTPStatus.FORBIDDEN
-
 
         g.current_user = acting_user
         g.session_user = session_user

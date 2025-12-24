@@ -21,8 +21,6 @@ def use_schema(schema_cls: type[BaseModel]):
             try:
                 obj = schema_cls.model_validate(json_data)
             except ValidationError as exc:
-                # exc.errors() can contain non-JSON-safe ctx values.
-                # We simplify each error to just loc, msg, type.
                 simplified_errors = [
                     {
                         "loc": err.get("loc"),

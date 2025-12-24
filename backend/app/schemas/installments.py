@@ -17,7 +17,6 @@ class InstallmentItemInputSchema(BaseModel):
     def validate_expected_amount(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("expected_amount must be greater than 0")
-        # normalize to 2 decimals
         return round(v, 2)
 
 
@@ -27,7 +26,6 @@ class CreateInstallmentPlanRequestSchema(BaseModel):
     description: Optional[str] = None
     total_amount: float
     start_date: Optional[date] = None
-    # optional explicit installment schedule
     installments: Optional[List[InstallmentItemInputSchema]] = None
 
     @field_validator("description")
@@ -47,7 +45,6 @@ class CreateInstallmentPlanRequestSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_installments_sum(self):
-        # If user provided installments, ensure they sum to total_amount
         if self.installments:
             total_installments = round(
                 sum(i.expected_amount for i in self.installments), 2
@@ -64,7 +61,6 @@ class UpdateInstallmentPlanRequestSchema(BaseModel):
     total_amount: Optional[float] = None
     status: Optional[PlanStatus] = None
     start_date: Optional[date] = None
-    # full replacement of installments (optional)
     installments: Optional[List[InstallmentItemInputSchema]] = None
 
     @field_validator("description")
@@ -98,7 +94,6 @@ class UpdateInstallmentPlanRequestSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_installments_sum(self):
-        # Only enforce when both total_amount and installments are provided together
         if self.installments is not None and self.total_amount is not None:
             total_installments = round(
                 sum(i.expected_amount for i in self.installments), 2
@@ -140,7 +135,6 @@ class InstallmentPlanResponseSchema(BaseModel):
     overdue_installments: int | None = None
     next_due_date: Optional[date] = None
     next_due_amount: Optional[float] = None
-
 
 
 class UpcomingInstallmentResponseSchema(BaseModel):

@@ -1,7 +1,9 @@
 # tests/conftest.py
 import pytest
 from datetime import date, timedelta
-from sqlalchemy import orm  # <--- Added this import for manual session creation
+from sqlalchemy import orm
+from flask_jwt_extended import create_access_token  # <--- Added for auth headers
+
 from app import create_app
 from app.config import Config
 from app.extensions import db as _db
@@ -14,6 +16,8 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
     DEBUG = False
+    # Ensure JWT secret is set for tests
+    JWT_SECRET_KEY = "test-secret-key"
 
 
 @pytest.fixture(scope="session")
@@ -38,12 +42,8 @@ def db_session(app):
     transaction = connection.begin()
 
     # --- FIX START: Manual Session Creation ---
-    # Create a session factory bound to this specific connection
     session_factory = orm.sessionmaker(bind=connection)
-    # Create a scoped session (thread-safe registry)
     session = orm.scoped_session(session_factory)
-
-    # Override the global Flask-SQLAlchemy session with our test session
     _db.session = session
     # --- FIX END ---
 
@@ -54,6 +54,32 @@ def db_session(app):
     transaction.rollback()
     connection.close()
     _db.drop_all()
+
+
+@pytest.fixture
+def client(app):
+    """
+    Creates a test client for API requests.
+    """
+    return app.test_client()
+
+
+@pytest.fixture
+def auth_headers_generator(app):
+    """
+    Returns a function that generates a Bearer token header for a specific user.
+    """
+
+    def _make_headers(user):
+        with app.app_context():
+            # Create a token for the user.
+            # We convert user_id to string as some JWT setups prefer string identities.
+            access_token = create_access_token(identity=str(user.user_id))
+            return {
+                'Authorization': f'Bearer {access_token}'
+            }
+
+    return _make_headers
 
 
 # --- FACTORIES (Unchanged) ---

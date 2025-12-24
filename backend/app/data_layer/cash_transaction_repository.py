@@ -32,7 +32,7 @@ class CashTransactionRepository:
             tip_id: int | None,
             tip_payout_id: int | None,
             note: str | None,
-            status: str,  # Updated to str to match Model
+            status: str,
             occurred_at: datetime | None,
             created_by: int,
             session_user_id: int,
@@ -64,7 +64,7 @@ class CashTransactionRepository:
             *,
             cashbox_id: int | None = None,
             type: CashTransactionType | None = None,
-            status: str | None = None,  # Updated to str
+            status: str | None = None,
             category_id: int | None = None,
             payment_id: int | None = None,
             date_from: datetime | date | None = None,
@@ -133,7 +133,6 @@ class CashTransactionRepository:
         base = select(CashTransaction).where(
             CashTransaction.clinic_id == clinic_id,
             CashTransaction.cashbox_id == cashbox_id,
-            # CRITICAL: Only count confirmed transactions!
             CashTransaction.status == TransactionStatus.CONFIRMED.value
         )
 
@@ -178,6 +177,13 @@ class CashTransactionRepository:
             "total_adjustment": float(total_adj),
             "net": round(net, 2),
         }
+
+    def get_with_lock(self, transaction_id: int, clinic_id: int):
+        stmt = select(CashTransaction).where(
+            CashTransaction.transaction_id == transaction_id,
+            CashTransaction.clinic_id == clinic_id
+        ).with_for_update()
+        return db.session.scalar(stmt)
 
 
 cash_tx_repo = CashTransactionRepository()

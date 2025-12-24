@@ -7,8 +7,8 @@ from datetime import datetime, date, timedelta
 from sqlalchemy import select, func, and_
 
 from ..extensions import db
-from ..models import Payment
-from ..enums import PaymentMethod
+from ..models import Payment, CashTransaction
+from ..enums import PaymentMethod, PaymentStatus, TransactionStatus
 from ..utils.pagination import validate_pagination, page_meta
 
 
@@ -179,6 +179,21 @@ class PaymentRepository:
         items = db.session.scalars(stmt).all()
         meta = page_meta(page, page_size, total_items)
         return items, meta
+
+    def count_pending_for_cashbox(self, cashbox_id: int, clinic_id: int) -> int:
+        stmt = select(func.count(Payment.payment_id)).where(
+            Payment.clinic_id == clinic_id,
+            Payment.target_cashbox_id == cashbox_id,
+            Payment.status == PaymentStatus.PENDING.value
+        )
+        return db.session.scalar(stmt) or 0
+
+    def get_with_lock(self, payment_id: int, clinic_id: int):
+        stmt = select(Payment).where(
+            Payment.payment_id == payment_id,
+            Payment.clinic_id == clinic_id
+        ).with_for_update()
+        return db.session.scalar(stmt)
 
 
 payment_repo = PaymentRepository()

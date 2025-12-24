@@ -69,7 +69,6 @@ class TipRepository:
         if date_from is not None:
             stmt = stmt.where(Tip.created_at >= date_from)
         if date_to is not None:
-            # If it's midnight (00:00:00), we assume inclusive end date -> < next day
             if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
                 stmt = stmt.where(Tip.created_at < date_to + timedelta(days=1))
             else:
@@ -90,7 +89,6 @@ class TipRepository:
         if date_from is not None:
             stmt = stmt.where(Tip.created_at >= date_from)
         if date_to is not None:
-            # If it's midnight (00:00:00), we assume inclusive end date -> < next day
             if isinstance(date_to, datetime) and date_to.hour == 0 and date_to.minute == 0:
                 stmt = stmt.where(Tip.created_at < date_to + timedelta(days=1))
             else:

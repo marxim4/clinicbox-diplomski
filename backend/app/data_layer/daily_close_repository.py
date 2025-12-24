@@ -27,19 +27,19 @@ class DailyCloseRepository:
         return db.session.scalar(stmt)
 
     def create_close(
-        self,
-        *,
-        clinic_id: int,
-        cashbox_id: int,
-        day: date,
-        expected_total: float,
-        counted_total: float,
-        variance: float,
-        note: str | None,
-        closed_by: int,
-        session_user_id: int,
-        status: str,
-        approved_by: int | None = None,
+            self,
+            *,
+            clinic_id: int,
+            cashbox_id: int,
+            day: date,
+            expected_total: float,
+            counted_total: float,
+            variance: float,
+            note: str | None,
+            closed_by: int,
+            session_user_id: int,
+            status: str,
+            approved_by: int | None = None,
     ):
         close = DailyClose(
             clinic_id=clinic_id,
@@ -59,14 +59,14 @@ class DailyCloseRepository:
         return close
 
     def search(
-        self,
-        clinic_id: int,
-        *,
-        cashbox_id: int | None = None,
-        date_from: date | None = None,
-        date_to: date | None = None,
-        page: int | None = None,
-        page_size: int | None = None,
+            self,
+            clinic_id: int,
+            *,
+            cashbox_id: int | None = None,
+            date_from: date | None = None,
+            date_to: date | None = None,
+            page: int | None = None,
+            page_size: int | None = None,
     ) -> Tuple[List[DailyClose], Optional[dict]]:
         base = select(DailyClose).where(DailyClose.clinic_id == clinic_id)
 
@@ -102,6 +102,13 @@ class DailyCloseRepository:
         items = db.session.scalars(stmt).all()
         meta = page_meta(page, page_size, total_items)
         return items, meta
+
+    def get_with_lock(self, close_id: int, clinic_id: int):
+        stmt = select(DailyClose).where(
+            DailyClose.close_id == close_id,
+            DailyClose.clinic_id == clinic_id
+        ).with_for_update()
+        return db.session.scalar(stmt)
 
 
 daily_close_repo = DailyCloseRepository()

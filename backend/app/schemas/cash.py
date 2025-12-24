@@ -4,7 +4,6 @@ from datetime import datetime, date
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-from pydantic.types import PositiveFloat
 
 from ..enums import CashTransactionType, TransactionStatus
 
@@ -102,11 +101,9 @@ class CreateCashTransactionRequestSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_logic(self):
-        # For IN / OUT, force positive amount
         if self.type in (CashTransactionType.IN, CashTransactionType.OUT):
             if self.amount <= 0:
                 raise ValueError("amount must be positive for IN/OUT")
-        # For ADJUSTMENT we allow positive or negative
         return self
 
 

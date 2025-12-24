@@ -1,6 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, field_validator
 
+
 class UpdateClinicDetailsSchema(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
@@ -16,6 +17,7 @@ class UpdateClinicDetailsSchema(BaseModel):
         if not v2:
             raise ValueError("must not be empty")
         return v2
+
 
 class UpdateClinicSettingsSchema(BaseModel):
     requires_payment_approval: Optional[bool] = None

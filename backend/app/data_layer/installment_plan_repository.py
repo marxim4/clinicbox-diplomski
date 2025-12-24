@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional, List, Tuple
+from typing import List, Tuple
 
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import joinedload
@@ -127,7 +127,7 @@ class InstallmentPlanRepository:
             start_date=start_date,
         )
         db.session.add(plan)
-        db.session.flush()  # get plan_id
+        db.session.flush()
 
         if installments_data:
             self._replace_installments(plan, installments_data)
@@ -202,7 +202,7 @@ class InstallmentPlanRepository:
             .where(
                 InstallmentPlan.clinic_id == clinic_id,
                 Installment.due_date >= from_date,
-                Installment.amount_paid < Installment.expected_amount,  # <<< add this
+                Installment.amount_paid < Installment.expected_amount,
             )
         )
 
@@ -263,7 +263,7 @@ class InstallmentPlanRepository:
             .where(
                 InstallmentPlan.clinic_id == clinic_id,
                 Installment.due_date < to_date,
-                Installment.amount_paid < Installment.expected_amount,  # unpaid/partially-paid
+                Installment.amount_paid < Installment.expected_amount,
             )
         )
 

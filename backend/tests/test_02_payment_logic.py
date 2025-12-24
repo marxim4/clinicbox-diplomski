@@ -1,3 +1,5 @@
+import pytest
+from pydantic import ValidationError
 from app.models.tip import Tip
 from app.enums import UserRole, PaymentStatus, PlanStatus, PaymentMethod
 from app.services.payment_service import payment_service
@@ -345,3 +347,56 @@ def test_complex_payment_waterfall_and_tips(db_session, clinic_factory, user_fac
     assert len(doctor_tips) == 1
     assert float(doctor_tips[0].amount) == 50.0
     assert doctor_tips[0].plan_id == plan.plan_id  # Verify link to the plan
+
+
+def test_service_create_valid_payment(db_session, clinic_factory, user_factory, cashbox_factory, patient_factory,
+                                      plan_factory):
+    """Test creating a standard cash payment via Service."""
+    clinic = clinic_factory()
+    # Manager gets default email (e.g., test@test.com)
+    manager = user_factory(clinic, role=UserRole.MANAGER)
+    cashbox = cashbox_factory(clinic)
+    # Doctor needs a UNIQUE email
+    doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doctor_valid_pay@test.com")
+
+    patient = patient_factory(clinic, doctor)
+    plan = plan_factory(clinic, patient, doctor, total_amount=100.0)
+
+    payload = CreatePaymentRequestSchema(
+        amount=100.0,
+        plan_id=plan.plan_id,
+        cashbox_id=cashbox.cashbox_id,
+        method=PaymentMethod.CASH
+    )
+
+    payment, error = payment_service.create_payment(
+        current_user=manager, session_user=manager, payload=payload
+    )
+
+    assert error is None
+    assert payment.status == PaymentStatus.PAID.value
+    assert float(payment.amount) == 100.0
+
+
+def test_service_reject_negative_payment(db_session, clinic_factory, user_factory, cashbox_factory, patient_factory,
+                                         plan_factory):
+    """Test that Pydantic rejects negative payment amounts immediately."""
+    clinic = clinic_factory()
+    manager = user_factory(clinic, role=UserRole.MANAGER)
+    cashbox = cashbox_factory(clinic)
+    doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doctor_neg_pay@test.com")
+
+    patient = patient_factory(clinic, doctor)
+    plan = plan_factory(clinic, patient, doctor, total_amount=100.0)
+
+    # The schema itself should raise the error, not the service
+    with pytest.raises(ValidationError) as excinfo:
+        CreatePaymentRequestSchema(
+            amount=-50.0,  # Negative!
+            plan_id=plan.plan_id,
+            cashbox_id=cashbox.cashbox_id,
+            method=PaymentMethod.CASH
+        )
+
+    # Verify the error message mentions the amount issue
+    assert "amount" in str(excinfo.value).lower() or "negative" in str(excinfo.value).lower()

@@ -27,8 +27,10 @@ bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 def _issue_tokens_response(msg: str, user: User, status: HTTPStatus):
     user_id_str = str(user.user_id)
 
-    access = create_access_token(identity=user_id_str)
-    refresh = create_refresh_token(identity=user_id_str)
+    claims = {"v": user.token_version}
+
+    access = create_access_token(identity=user_id_str, additional_claims=claims)
+    refresh = create_refresh_token(identity=user_id_str, additional_claims=claims)
 
     resp = jsonify(
         msg=msg,
@@ -116,10 +118,12 @@ def login(data: LoginSchema):
 @jwt_required(refresh=True)
 def refresh():
     identity = get_jwt_identity()
-    access = create_access_token(identity=identity)
+    user = db.session.get(User, int(identity))
 
-    resp = jsonify(msg="refreshed", access_token=access)
-    set_access_cookies(resp, access)
+    if not user or not user.is_active:
+        return jsonify(msg="user invalid"), HTTPStatus.UNAUTHORIZED
+
+    resp, _ = _issue_tokens_response("refreshed", user, HTTPStatus.OK)
     return resp, HTTPStatus.OK
 
 
@@ -141,7 +145,5 @@ def change_password(data: ChangePasswordSchema):
 
     user.set_password(data.new_password)
     db.session.commit()
-
-    # TODO (later): revoke existing refresh tokens / sessions
 
     return jsonify(msg="password changed"), HTTPStatus.OK

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List
 
 from sqlalchemy import select, func, or_
 
@@ -35,7 +35,7 @@ class PatientRepository:
             .order_by(Patient.last_name.asc(), Patient.first_name.asc())
         )
         if not include_inactive:
-            stmt = stmt.where(Patient.is_active.is_(True))  # <--- Filter
+            stmt = stmt.where(Patient.is_active.is_(True))
 
         return db.session.scalars(stmt).all()
 
@@ -156,7 +156,6 @@ class PatientRepository:
         if not include_inactive:
             base = base.where(Patient.is_active.is_(True))
 
-        # field filters
         if doctor_id is not None:
             base = base.where(Patient.doctor_id == doctor_id)
 
@@ -272,6 +271,14 @@ class PatientRepository:
 
         meta = page_meta(page, page_size, total_items)
         return items, meta
+
+    def get_with_lock(self, patient_id: int, clinic_id: int):
+        stmt = select(Patient).where(
+            Patient.patient_id == patient_id,
+            Patient.clinic_id == clinic_id
+        ).with_for_update()
+
+        return db.session.scalar(stmt)
 
 
 patient_repo = PatientRepository()

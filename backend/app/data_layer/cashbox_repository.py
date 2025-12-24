@@ -28,7 +28,7 @@ class CashboxRepository:
         """
         stmt = select(Cashbox).where(
             Cashbox.clinic_id == clinic_id,
-            Cashbox.is_default.is_(True)  # <--- NEW LOGIC
+            Cashbox.is_default.is_(True)
         )
         return db.session.scalar(stmt)
 
@@ -46,19 +46,14 @@ class CashboxRepository:
         db.session.execute(stmt)
 
     def create_cashbox(self, clinic_id: int, name: str, description: str | None, is_default: bool = False):
-        # 1. If this is going to be default, unset others first to prevent DB crash
         if is_default:
             self._unset_other_defaults(clinic_id)
 
-        # 2. Create the new box
         cashbox = Cashbox(
             clinic_id=clinic_id,
             name=name,
             description=description,
             is_active=True,
-            # We set is_default manually after init if your model constructor acts up,
-            # but passing it as a kwarg usually works if defined in the model.
-            # Safe bet: set it below.
         )
         if is_default:
             cashbox.is_default = True
@@ -73,7 +68,7 @@ class CashboxRepository:
             name: str | None = None,
             description: str | None = None,
             is_active: bool | None = None,
-            is_default: bool | None = None  # <--- Added parameter
+            is_default: bool | None = None
     ):
         if name is not None:
             cashbox.name = name
@@ -82,7 +77,6 @@ class CashboxRepository:
         if is_active is not None:
             cashbox.is_active = is_active
 
-        # Handle default switching logic
         if is_default is True and not cashbox.is_default:
             self._unset_other_defaults(cashbox.clinic_id)
             cashbox.is_default = True

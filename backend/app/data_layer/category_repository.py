@@ -43,11 +43,11 @@ class CategoryRepository:
         return category
 
     def update_category(
-        self,
-        category,
-        *,
-        name: str | None = None,
-        is_pinned: bool | None = None,
+            self,
+            category,
+            *,
+            name: str | None = None,
+            is_pinned: bool | None = None,
     ):
         if name is not None:
             category.name = name

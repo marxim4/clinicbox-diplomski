@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List, Optional
-
 from sqlalchemy import select, func
 
 from ..extensions import db

@@ -28,10 +28,8 @@ class InstallmentPlan(db.Model):
         nullable=False,
     )
 
-    # Provided description of plan
     description: Mapped[str | None] = mapped_column(String(255))
 
-    # Total amount of entire plan
     total_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
     default_payment_method: Mapped[PaymentMethod] = mapped_column(
@@ -40,33 +38,27 @@ class InstallmentPlan(db.Model):
         default=PaymentMethod.CASH,
     )
 
-    # Status of the plan
     status: Mapped[PlanStatus] = mapped_column(
         Enum(PlanStatus),
         default=PlanStatus.PLANNED,
         nullable=False,
     )
 
-    # When the plan starts (optional)
     start_date: Mapped[date | None] = mapped_column(Date)
 
     clinic: Mapped["Clinic"] = relationship("Clinic", back_populates="installment_plans")
     patient: Mapped["Patient"] = relationship("Patient", back_populates="installment_plans")
     doctor: Mapped["User"] = relationship("User", back_populates="installment_plans")
 
-    # Installments are part of the plan definition, so they can be deleted if plan is deleted
     installments: Mapped[List["Installment"]] = relationship(
         "Installment",
         back_populates="plan",
         cascade="all, delete-orphan",
     )
 
-    # --- SAFETY CRITICAL: NO CASCADE HERE ---
-    # Payments must persist even if the plan object is deleted (for audit)
     payments: Mapped[List["Payment"]] = relationship(
         "Payment",
         back_populates="plan",
-        # cascade="all, delete-orphan"  <-- REMOVED
     )
 
     def __repr__(self) -> str:

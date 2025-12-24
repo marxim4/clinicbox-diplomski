@@ -5,21 +5,31 @@ from .extensions import db, migrate, cors, jwt, bcrypt
 
 
 def create_app(config_object=DevConfig) -> Flask:
+    """
+    Application Factory.
+
+    Initializes the Flask application, registers extensions, and blueprints.
+    This pattern allows for creating multiple instances of the app with different
+    configurations (e.g., Development, Testing, Production).
+    """
     app = Flask(__name__)
     app.config.from_object(config_object)
 
+    # Initialize Extensions
     db.init_app(app)
     bcrypt.init_app(app)
     migrate.init_app(app, db)
 
-    from . import models
-
+    # CORS Setup: Allow credentials to support secure cookies
     cors.init_app(
         app,
         supports_credentials=True,
         resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}},
     )
     jwt.init_app(app)
+
+    # Register Blueprints
+    from . import models  # noqa: F401 (Ensure models are loaded for Migrations)
 
     from .blueprints.auth import bp as auth_bp
     from .blueprints.users import bp as users_bp
@@ -55,9 +65,9 @@ def create_app(config_object=DevConfig) -> Flask:
     app.register_blueprint(reports_bp)
     app.register_blueprint(audit_logs_bp)
 
-    # a simple root route (optional)
     @app.get("/")
     def index():
+        """Health check endpoint."""
         return jsonify({"app": "clinicBox", "status": "running"})
 
     return app

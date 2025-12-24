@@ -1,9 +1,12 @@
 from datetime import date, datetime, timedelta
-from app.enums import UserRole, DailyCloseStatus, CashTransactionType, TransactionStatus
+import pytest
+from app.enums import UserRole, DailyCloseStatus, CashTransactionType, TransactionStatus, PaymentMethod
 from app.services.daily_close_service import daily_close_service
 from app.services.cash_service import cash_service
+from app.services.payment_service import payment_service
 from app.schemas.daily_close import CreateDailyCloseRequestSchema
 from app.schemas.cash import CreateCashTransactionRequestSchema
+from app.schemas.payments import CreatePaymentRequestSchema
 from app.models import CashTransaction
 
 
@@ -82,8 +85,8 @@ def test_manager_approves_variance(db_session, clinic_factory, user_factory, cas
     Scenario: Manager approves the missing 10 EUR from the test above.
     """
     clinic = clinic_factory(settings={"requires_close_approval": True})
-    junior = user_factory(clinic, role=UserRole.RECEPTIONIST, email="junior@test.com")
-    manager = user_factory(clinic, role=UserRole.MANAGER, email="boss@test.com")
+    junior = user_factory(clinic, role=UserRole.RECEPTIONIST, email="junior_var@test.com")
+    manager = user_factory(clinic, role=UserRole.MANAGER, email="boss_var@test.com")
     cashbox = cashbox_factory(clinic)
 
     # Add 100
@@ -149,9 +152,8 @@ def test_daily_close_empty_day(db_session, clinic_factory, user_factory, cashbox
     assert error is None
     assert close_record is not None
 
-    # --- FIX: Changed 'actual_total' to 'counted_total' ---
     assert float(close_record.expected_total) == 0.0
-    assert float(close_record.counted_total) == 0.0  # <--- Correct attribute name
+    assert float(close_record.counted_total) == 0.0
     assert float(close_record.variance) == 0.0
     assert close_record.status == DailyCloseStatus.APPROVED.value
 
@@ -168,7 +170,6 @@ def test_forgotten_close_multi_day_accumulation(db_session, clinic_factory, user
     cashbox = cashbox_factory(clinic)
 
     # --- Day 1 (Monday) ---
-    # FIX: Create object WITHOUT created_at first
     monday_tx = CashTransaction(
         clinic_id=clinic.clinic_id,
         cashbox_id=cashbox.cashbox_id,
@@ -177,7 +178,6 @@ def test_forgotten_close_multi_day_accumulation(db_session, clinic_factory, user
         status=TransactionStatus.CONFIRMED.value,
         created_by=manager.user_id,
         session_user_id=manager.user_id
-        # Removed created_at here to avoid TypeError
     )
     # Set date manually AFTER initialization
     monday_tx.created_at = datetime.utcnow() - timedelta(days=1)
@@ -195,7 +195,6 @@ def test_forgotten_close_multi_day_accumulation(db_session, clinic_factory, user
         status=TransactionStatus.CONFIRMED.value,
         created_by=manager.user_id,
         session_user_id=manager.user_id
-        # created_at defaults to Now
     )
     db_session.add(tuesday_tx)
     cashbox.current_amount = 150.0
@@ -217,3 +216,136 @@ def test_forgotten_close_multi_day_accumulation(db_session, clinic_factory, user
     assert error is None
     # This proves the system includes Monday's 100 + Tuesday's 50
     assert float(close_record.expected_total) == 150.0
+
+
+def test_service_daily_close_discrepancy(db_session, clinic_factory, user_factory, cashbox_factory):
+    """
+    Test daily close when money is missing via Service.
+    """
+    clinic = clinic_factory()
+    manager = user_factory(clinic, role=UserRole.MANAGER)
+    cashbox = cashbox_factory(clinic)
+
+    # 1. Add 100 to system
+    cash_service.create_transaction(
+        current_user=manager, session_user=manager,
+        payload=CreateCashTransactionRequestSchema(
+            cashbox_id=cashbox.cashbox_id, type=CashTransactionType.IN, amount=100.0
+        )
+    )
+
+    # 2. Count only 90 (Missing 10)
+    payload = CreateDailyCloseRequestSchema(
+        cashbox_id=cashbox.cashbox_id,
+        counted_total=90.0,
+        date=date.today()
+    )
+
+    close, error = daily_close_service.create_daily_close(
+        current_user=manager, session_user=manager, payload=payload
+    )
+
+    assert error is None
+    assert float(close.variance) == -10.0
+
+
+def test_service_reject_payment_after_close(db_session, clinic_factory, user_factory, cashbox_factory, patient_factory,
+                                            plan_factory):
+    """
+    Ensure no new payments can be added if the day is closed.
+    """
+    clinic = clinic_factory()
+    manager = user_factory(clinic, role=UserRole.MANAGER)
+    cashbox = cashbox_factory(clinic)
+
+    # --- UNIQUE EMAIL FIX ---
+    doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_closed_reject@test.com")
+
+    patient = patient_factory(clinic, doctor)
+    plan = plan_factory(clinic, patient, doctor, total_amount=500.0)
+
+    # 1. Close the day
+    close_payload = CreateDailyCloseRequestSchema(
+        cashbox_id=cashbox.cashbox_id, counted_total=0.0, date=date.today()
+    )
+    daily_close_service.create_daily_close(current_user=manager, session_user=manager, payload=close_payload)
+
+    # 2. Try to add a payment
+    pay_payload = CreatePaymentRequestSchema(
+        amount=100.0, plan_id=plan.plan_id, cashbox_id=cashbox.cashbox_id
+    )
+
+    payment, error = payment_service.create_payment(
+        current_user=manager, session_user=manager, payload=pay_payload
+    )
+
+    # 3. Expect Error
+    assert payment is None
+    assert error is not None
+    assert "closed" in error.lower()
+
+
+def test_service_reject_duplicate_close(db_session, clinic_factory, user_factory, cashbox_factory):
+    """Ensure we can't close the same day twice."""
+    clinic = clinic_factory()
+    manager = user_factory(clinic, role=UserRole.MANAGER)
+    cashbox = cashbox_factory(clinic)
+
+    payload = CreateDailyCloseRequestSchema(
+        cashbox_id=cashbox.cashbox_id, counted_total=0.0, date=date.today()
+    )
+
+    # Close once
+    daily_close_service.create_daily_close(current_user=manager, session_user=manager, payload=payload)
+
+    # Close again
+    close2, error2 = daily_close_service.create_daily_close(
+        current_user=manager, session_user=manager, payload=payload
+    )
+
+    assert close2 is None
+    assert error2 is not None
+    assert "already closed" in error2.lower()
+
+
+def test_daily_close_blocked_by_pending_payments(db_session, clinic_factory, user_factory, cashbox_factory,
+                                                 patient_factory, plan_factory):
+    """
+    Scenario: Manager tries to close, but a Junior left a payment as PENDING.
+    Expected: System rejects the close to force cleanup.
+    """
+    clinic = clinic_factory(settings={"requires_payment_approval": True})
+
+    # Give everyone unique emails to avoid IntegrityError
+    manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_clean_desk@test.com")
+    junior = user_factory(clinic, role=UserRole.RECEPTIONIST, email="junior_clean_desk@test.com")
+
+    cashbox = cashbox_factory(clinic)
+
+    # 1. Create a Pending Payment
+    doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_clean_desk@test.com")
+    patient = patient_factory(clinic, doctor)
+    plan = plan_factory(clinic, patient, doctor, total_amount=100.0)
+
+    pay_payload = CreatePaymentRequestSchema(
+        amount=50.0,
+        plan_id=plan.plan_id,
+        cashbox_id=cashbox.cashbox_id,
+        method=PaymentMethod.CASH
+    )
+    # Junior creates it -> PENDING
+    payment_service.create_payment(current_user=junior, session_user=junior, payload=pay_payload)
+
+    # 2. Manager tries to Close
+    close_payload = CreateDailyCloseRequestSchema(
+        cashbox_id=cashbox.cashbox_id, counted_total=0.0, date=date.today()
+    )
+
+    close, error = daily_close_service.create_daily_close(
+        current_user=manager, session_user=manager, payload=close_payload
+    )
+
+    # 3. Assert Blocking
+    assert close is None
+    assert error is not None
+    assert "pending payments" in error.lower()

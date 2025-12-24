@@ -38,12 +38,10 @@ class Clinic(db.Model):
         uselist=False,
     )
 
-    # Approval settings
     requires_payment_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
     requires_cash_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
     requires_close_approval: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    # Authentication / workflow behaviour
     use_shared_terminal_mode: Mapped[bool] = mapped_column(default=True, nullable=False)
     require_pin_for_actions: Mapped[bool] = mapped_column(default=True, nullable=False)
     require_pin_for_signoff: Mapped[bool] = mapped_column(default=True, nullable=False)
@@ -52,7 +50,7 @@ class Clinic(db.Model):
         "User",
         back_populates="clinic",
         cascade="all, delete-orphan",
-        foreign_keys="User.clinic_id",  # <-- important
+        foreign_keys="User.clinic_id",
     )
 
     patients: Mapped[List["Patient"]] = relationship(

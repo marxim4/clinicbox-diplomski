@@ -60,8 +60,6 @@ def create_payment(data: CreatePaymentRequestSchema):
 @bp.post("/<int:payment_id>/approve")
 @login_required
 def approve_payment(payment_id: int):
-    # This action is typically performed by the logged-in user (Owner/Manager)
-    # without needing to switch identities via PIN, though you could add @require_pin if you wanted.
     current_user = g.current_user
 
     payment, error = payment_service.approve_payment(current_user, payment_id)
@@ -77,6 +75,27 @@ def approve_payment(payment_id: int):
 
     return jsonify(
         msg="payment approved",
+        payment=_serialize_payment(payment)
+    ), HTTPStatus.OK
+
+
+@bp.post("/<int:payment_id>/reject")
+@login_required
+def reject_payment(payment_id: int):
+    payment, error = payment_service.reject_payment(g.current_user, payment_id)
+
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error:
+            status = HTTPStatus.FORBIDDEN
+        elif "not found" in error:
+            status = HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), status
+
+    db.session.commit()
+
+    return jsonify(
+        msg="payment rejected",
         payment=_serialize_payment(payment)
     ), HTTPStatus.OK
 

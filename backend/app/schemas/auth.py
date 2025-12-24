@@ -18,7 +18,7 @@ class RegisterOwnerSchema(BaseModel):
 
     clinic_name: str
     clinic_address: Optional[str] = None
-    clinic_type: Optional[str] = None  # enum name, e.g. "DENTAL"
+    clinic_type: Optional[str] = None
     currency: Optional[str] = "EUR"
     default_language: Optional[str] = "en"
 

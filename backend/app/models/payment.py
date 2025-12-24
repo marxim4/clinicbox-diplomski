@@ -41,10 +41,8 @@ class Payment(db.Model):
         nullable=True,
     )
 
-    # Amount that reduces the patient's debt
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
-    # Optional tip paid by the patient
     tip_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
 
     method: Mapped[PaymentMethod] = mapped_column(

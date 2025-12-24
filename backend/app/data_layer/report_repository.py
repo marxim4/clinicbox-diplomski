@@ -214,7 +214,6 @@ class ReportRepository:
         clinic_id: int,
         patient_id: int,
     ):
-        # planned
         planned_stmt = (
             select(func.coalesce(func.sum(InstallmentPlan.total_amount), 0))
             .where(
@@ -224,7 +223,6 @@ class ReportRepository:
         )
         total_planned = float(db.session.scalar(planned_stmt) or 0)
 
-        # paid
         paid_stmt = (
             select(
                 func.coalesce(func.sum(Payment.amount), 0),
@@ -241,7 +239,6 @@ class ReportRepository:
         total_paid = float(paid_sum or 0)
         total_tips = float(tips_sum or 0)
 
-        # remaining debt (from installments)
         debt_stmt = (
             select(
                 func.coalesce(
@@ -259,7 +256,6 @@ class ReportRepository:
         )
         remaining_debt = float(db.session.scalar(debt_stmt) or 0)
 
-        # active / overdue plans
         active_stmt = (
             select(
                 func.count(InstallmentPlan.plan_id),
@@ -282,7 +278,6 @@ class ReportRepository:
         active_plans_count = int(active_count or 0)
         overdue_plans_count = int(overdue_count or 0)
 
-        # patient name
         p_stmt = (
             select(Patient.first_name, Patient.last_name)
             .where(
@@ -315,7 +310,6 @@ class ReportRepository:
         clinic_id: int,
         limit: int = 20,
     ):
-        # remaining debt per patient
         debt_subq = (
             select(
                 InstallmentPlan.patient_id.label("patient_id"),
@@ -335,7 +329,6 @@ class ReportRepository:
             .group_by(InstallmentPlan.patient_id)
         ).subquery()
 
-        # last payment per patient
         pay_subq = (
             select(
                 Payment.patient_id.label("patient_id"),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Tuple
 
-from ..models import User
+from ..models import User, CashTransaction
 from ..enums import CashTransactionType, TransactionStatus
 from ..data_layer.cashbox_repository import cashbox_repo
 from ..data_layer.cash_transaction_repository import cash_tx_repo
@@ -185,21 +185,25 @@ class CashService:
     def approve_transaction(self, approver: User, tx_id: int) -> Tuple[Optional[CashTransaction], Optional[str]]:
         """
         Finalizes a PENDING Manual Transaction (Expense/Deposit).
+        Uses ROW LOCKING to prevent race conditions.
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        tx = cash_tx_repo.get_by_id_in_clinic(tx_id, approver.clinic_id)
-        if not tx: return None, "transaction not found"
+        # 1. LOCK
+        tx = cash_tx_repo.get_with_lock(tx_id, approver.clinic_id)
+
+        if not tx:
+            return None, "transaction not found"
 
         if tx.status != TransactionStatus.PENDING.value:
             return None, "transaction is not pending"
 
-        # 1. Update Status
+        # 2. Update Status
         tx.status = TransactionStatus.CONFIRMED.value
         tx.approved_by = approver.user_id
 
-        # 2. Affect Balance NOW
+        # 3. Affect Balance NOW
         # We need to fetch the cashbox to adjust it
         cashbox = cashbox_repo.get_in_clinic(tx.cashbox_id, approver.clinic_id)
         if cashbox:
@@ -209,11 +213,37 @@ class CashService:
                 float(tx.amount)
             )
 
-        # 3. Update Category Usage
+        # 4. Update Category Usage
         if tx.category_id:
             category = category_repo.get_by_id_in_clinic(tx.category_id, approver.clinic_id)
             if category:
                 category_repo.increment_usage(category, datetime.utcnow())
+
+        return tx, None
+
+    def reject_transaction(self, rejector: User, tx_id: int) -> Tuple[Optional[CashTransaction], Optional[str]]:
+        """
+        Marks a transaction as REJECTED and records who did it.
+        No money moves (balance remains unchanged).
+        """
+        if not rejector.can_approve_financials:
+            return None, "permission denied"
+
+        # Lock to ensure consistency
+        tx = cash_tx_repo.get_with_lock(tx_id, rejector.clinic_id)
+
+        if not tx:
+            return None, "transaction not found"
+
+        if tx.status != TransactionStatus.PENDING.value:
+            return None, "transaction is not pending"
+
+        # 1. Update Status
+        tx.status = TransactionStatus.REJECTED.value
+
+        # 2. Record the Actor (Reuse the approved_by field)
+        # This provides a permanent audit trail of who rejected the transaction.
+        tx.approved_by = rejector.user_id
 
         return tx, None
 

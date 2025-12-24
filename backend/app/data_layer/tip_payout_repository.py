@@ -28,7 +28,6 @@ class TipPayoutRepository:
             created_by: int,
             session_user_id: int,
             note: str | None = None,
-            # New Params
             status: str,
             approved_by: int | None = None,
     ):
@@ -50,7 +49,7 @@ class TipPayoutRepository:
             self,
             clinic_id: int,
             doctor_id: int,
-    ) :
+    ):
         stmt = (
             select(TipPayout)
             .where(
@@ -84,6 +83,14 @@ class TipPayoutRepository:
 
         total = db.session.scalar(stmt)
         return float(total or 0)
+
+    def get_payout_with_lock(self, payout_id: int, clinic_id: int):
+        from ..models import TipPayout
+        stmt = select(TipPayout).where(
+            TipPayout.payout_id == payout_id,
+            TipPayout.clinic_id == clinic_id
+        ).with_for_update()
+        return db.session.scalar(stmt)
 
 
 tip_payout_repo = TipPayoutRepository()

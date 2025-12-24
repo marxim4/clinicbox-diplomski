@@ -44,7 +44,6 @@ def create_cash_transaction(data: CreateCashTransactionRequestSchema):
 
     db.session.commit()
 
-    # If the logic decided it was PENDING, the frontend sees that in the response
     return (
         jsonify(msg="cash transaction created", transaction=_serialize_tx(tx)),
         HTTPStatus.CREATED,
@@ -54,8 +53,6 @@ def create_cash_transaction(data: CreateCashTransactionRequestSchema):
 @bp.post("/<int:tx_id>/approve")
 @login_required
 def approve_transaction(tx_id: int):
-    # Approval is usually done by the logged-in Manager (no PIN swap needed),
-    # but they must have 'can_approve_financials=True'
     current_user = g.current_user
 
     tx, error = cash_service.approve_transaction(current_user, tx_id)
@@ -73,6 +70,27 @@ def approve_transaction(tx_id: int):
 
     db.session.commit()
     return jsonify(msg="transaction approved", transaction=_serialize_tx(tx)), HTTPStatus.OK
+
+
+@bp.post("/<int:tx_id>/reject")
+@login_required
+def reject_transaction(tx_id: int):
+    tx, error = cash_service.reject_transaction(g.current_user, tx_id)
+
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error:
+            status = HTTPStatus.FORBIDDEN
+        elif "not found" in error:
+            status = HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), status
+
+    db.session.commit()
+
+    return jsonify(
+        msg="transaction rejected",
+        transaction=_serialize_tx(tx)
+    ), HTTPStatus.OK
 
 
 @bp.get("")

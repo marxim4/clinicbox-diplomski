@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-
 from datetime import date, datetime
 from typing import Optional, Tuple
 
+from ..services.daily_close_service import daily_close_service
 from ..extensions import db
 
 from ..models import User, InstallmentPlan, Installment, Payment
@@ -227,6 +227,10 @@ class PaymentService:
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
+        if payload.cashbox_id:
+            if daily_close_service.is_today_closed(payload.cashbox_id, current_user.clinic_id):
+                return None, "Day is closed. No new payments allowed."
+
         clinic_id = current_user.clinic_id
         clinic = clinic_repo.get_by_id(clinic_id)
 
@@ -345,7 +349,15 @@ class PaymentService:
                 or PaymentMethod.CASH
         )
 
-        patient = patient_repo.get_by_id_in_clinic(plan.patient_id, clinic_id) if plan.patient_id else None
+        # --- LOCKING IMPLEMENTED HERE ---
+        # Instead of get_by_id_in_clinic, we use get_with_lock.
+        # This prevents race conditions if two receptionists pay for this patient simultaneously.
+        patient = None
+        if plan.patient_id:
+            patient = patient_repo.get_with_lock(plan.patient_id, clinic_id)
+            if not patient:
+                return None, "patient not found"
+        # --------------------------------
 
         total_remaining_before = self._total_plan_remaining(plan)
 
@@ -412,36 +424,37 @@ class PaymentService:
     def approve_payment(self, approver: User, payment_id: int):
         """
         Finalizes a PENDING payment.
-        Calculates debt application, tips, and moves money.
+        Uses ROW LOCKING to prevent race conditions (double approval).
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        payment = payment_repo.get_by_id_in_clinic(payment_id, approver.clinic_id)
+        # 1. Fetch with LOCK (Prevents race conditions)
+        payment = payment_repo.get_with_lock(payment_id, approver.clinic_id)
+
         if not payment:
             return None, "payment not found"
 
         if payment.status != PaymentStatus.PENDING.value:
             return None, "payment is not pending"
 
-        # 1. Update Status
+        # 2. Update Status
         payment.status = PaymentStatus.PAID.value
         payment.approved_by = approver.user_id
 
-        # 2. Fetch Plan Context (if it exists)
-        plan = None
-        start_inst = None
-        if payment.plan_id:
-            plan = installment_plan_repo.get_plan_in_clinic(payment.plan_id, payment.clinic_id)
+        # 3. Apply Debt Logic (Effect on Installments)
+        # We must re-fetch the plan context to apply the math now that it is approved.
+        if payment.plan_id and payment.amount > 0:
+            plan = installment_plan_repo.get_plan_in_clinic(payment.plan_id, approver.clinic_id)
+            start_inst = None
             if payment.installment_id:
-                start_inst = installment_plan_repo.get_installment_in_clinic(payment.installment_id, payment.clinic_id)
+                start_inst = installment_plan_repo.get_installment_in_clinic(payment.installment_id, approver.clinic_id)
 
-        # 3. Apply Effects
-        # A. Apply Debt Logic
-        if plan and payment.amount > 0:
-            self._apply_payment_to_installments(plan, start_inst, float(payment.amount))
+            # Apply the money to the debt
+            if plan:
+                self._apply_payment_to_installments(plan, start_inst, float(payment.amount))
 
-        # B. Apply Tip Logic
+        # 4. Apply Tip Logic
         if payment.tip_amount > 0:
             self._create_tip_from_payment(
                 clinic_id=payment.clinic_id,
@@ -449,21 +462,46 @@ class PaymentService:
                 amount=float(payment.tip_amount),
                 patient_id=payment.patient_id,
                 plan_id=payment.plan_id,
-                created_by=payment.created_by,
+                created_by=payment.created_by,  # Original creator gets credit
             )
 
-        # C. Move Money
+        # 5. Move Money (Cashbox Transaction)
         total_cash = float(payment.amount) + float(payment.tip_amount)
 
-        # Use the stored target_cashbox_id so money goes where it was originally intended
-        self._handle_cash_transaction(
+        err = self._handle_cash_transaction(
             clinic_id=payment.clinic_id,
-            user_id=approver.user_id,
-            session_user_id=payment.session_user_id,
+            user_id=approver.user_id,  # Approver causes the money move
+            session_user_id=payment.session_user_id,  # Keep history of who was physically there
             payment=payment,
-            cashbox_id=payment.target_cashbox_id,  # <--- RETRIEVED FROM DB
+            cashbox_id=payment.target_cashbox_id,  # Use the ID saved during creation
             total_cash=total_cash,
         )
+        if err:
+            return None, err
+
+        return payment, None
+
+    def reject_payment(self, rejector: User, payment_id: int):
+        """
+        Marks a payment as REJECTED and records who did it.
+        """
+        if not rejector.can_approve_financials:
+            return None, "permission denied"
+
+        payment = payment_repo.get_with_lock(payment_id, rejector.clinic_id)
+
+        if not payment:
+            return None, "payment not found"
+
+        if payment.status != PaymentStatus.PENDING.value:
+            return None, "payment is not pending"
+
+        # 1. Update Status (The WHAT)
+        payment.status = PaymentStatus.REJECTED.value
+
+        # 2. Record the Actor (The WHO)
+        # We reuse this field. If status is REJECTED, this ID is the Rejector.
+        payment.approved_by = rejector.user_id
 
         return payment, None
 

@@ -36,13 +36,11 @@ class CashTransaction(db.Model):
         nullable=False,
     )
 
-    # Link to patient payment (for IN from patients) – optional
     payment_id: Mapped[int | None] = mapped_column(
         ForeignKey("payment.payment_id"),
         nullable=True,
     )
 
-    # Expense category (for OUT transactions) – optional
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("category.category_id"),
         nullable=True,

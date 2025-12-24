@@ -1,5 +1,7 @@
 import pytest
-from app.enums import UserRole, PaymentMethod, TransactionStatus, CashTransactionType
+from app.enums import UserRole, PaymentMethod, CashTransactionType
+# Assuming TipPayoutStatus is in app.enums.tip_payout_status_enum based on your service code
+from app.enums.tip_payout_status_enum import TipPayoutStatus
 from app.services.payment_service import payment_service
 from app.services.tip_service import tip_service
 from app.schemas.payments import CreatePaymentRequestSchema
@@ -42,6 +44,9 @@ def test_manual_tip_increases_cashbox_and_pool(db_session, clinic_factory, user_
 
 
 def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox_factory):
+    """
+    Scenario: Doctor withdraws accumulated tips.
+    """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_payout@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_payout@test.com")
@@ -82,10 +87,12 @@ def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox
     )
     assert error is None
 
-    if payout.status == TransactionStatus.PENDING.value:
+    # Logic: If it went to PENDING (e.g. junior user or strict settings), approve it.
+    if payout.status == TipPayoutStatus.PENDING.value:
         payout, _ = tip_service.approve_payout(approver=manager, payout_id=payout.payout_id)
 
-    assert payout.status == TransactionStatus.CONFIRMED.value
+    # --- ASSERTION FIX: Compare against TipPayoutStatus.PAID ---
+    assert payout.status == TipPayoutStatus.PAID.value
 
     # 3. Verify Cashbox Dropped (100.0 - 100.0 = 0.0)
     db_session.refresh(cashbox)
@@ -98,6 +105,9 @@ def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox
 
 
 def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, cashbox_factory):
+    """
+    Scenario: Doctor tries to withdraw more than they have earned.
+    """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_overdraft@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_overdraft@test.com")
@@ -118,7 +128,7 @@ def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, c
     )
     payment_service.create_payment(current_user=manager, session_user=manager, payload=payload_in)
 
-    # 2. Try to withdraw €100 (which exceeds the €50 in the box)
+    # 2. Try to withdraw €100 (which exceeds the €50 available balance)
     payload_out = CreateTipPayoutRequestSchema(
         amount=100.0
     )
@@ -131,9 +141,14 @@ def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, c
         note=payload_out.note
     )
 
+    # Depending on implementation, it might fail at creation OR require approval then fail.
+    # The service code provided checks balance at creation, so we expect an error immediately.
     if payout and not error:
+        # If it somehow succeeded to create as PENDING, approval must fail
         approved_payout, error = tip_service.approve_payout(approver=manager, payout_id=payout.payout_id)
         assert error is not None
         assert "exceeds" in error or "balance" in error or "insufficient" in error
     else:
+        # Expected path: creation fails
         assert error is not None
+        assert "exceeds" in error or "balance" in error

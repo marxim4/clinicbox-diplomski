@@ -78,7 +78,6 @@ def list_tips_for_patient(patient_id: int):
 @bp.get("/plan/<int:plan_id>")
 @login_required
 def list_tips_for_plan(plan_id: int):
-    # Clinic check implicitly handled by Service if needed, or we rely on ID logic
     tips = tip_service.list_tips_for_plan(plan_id)
     return (
         jsonify(tips=[_serialize_tip(t) for t in tips]),
@@ -107,7 +106,7 @@ def get_doctor_balance(doctor_id: int):
 @login_required
 @use_schema(CreateTipPayoutRequestSchema)
 @require_pin
-@owner_only
+#@owner_only
 def create_tip_payout(doctor_id: int, data: CreateTipPayoutRequestSchema):
     acting_user = g.current_user
     session_user = getattr(g, "session_user", acting_user)
@@ -145,6 +144,27 @@ def approve_tip_payout(payout_id: int):
 
     db.session.commit()
     return jsonify(msg="tip payout approved", payout=_serialize_payout(payout)), HTTPStatus.OK
+
+
+@bp.post("/payouts/<int:payout_id>/reject")
+@login_required
+def reject_tip_payout(payout_id: int):
+    payout, error = tip_service.reject_payout(g.current_user, payout_id)
+
+    if error:
+        status = HTTPStatus.BAD_REQUEST
+        if "permission" in error:
+            status = HTTPStatus.FORBIDDEN
+        elif "not found" in error:
+            status = HTTPStatus.NOT_FOUND
+        return jsonify(msg=error), status
+
+    db.session.commit()
+
+    return jsonify(
+        msg="payout rejected",
+        payout=_serialize_payout(payout)
+    ), HTTPStatus.OK
 
 
 @bp.get("/doctor/<int:doctor_id>/payouts")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from sqlalchemy import String, Integer, ForeignKey, UniqueConstraint, Boolean, CheckConstraint
+from sqlalchemy import String, Integer, ForeignKey, Boolean, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db, bcrypt
@@ -28,6 +28,8 @@ class User(db.Model):
         nullable=False,
     )
 
+    token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     is_active: Mapped[bool] = mapped_column(default=True)
 
     can_approve_financials: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -40,14 +42,12 @@ class User(db.Model):
         ),
     )
 
-    # main clinic this user belongs to
     clinic: Mapped["Clinic"] = relationship(
         "Clinic",
         back_populates="users",
         foreign_keys=[clinic_id],
     )
 
-    # clinic where this user is the OWNER (1–1)
     owned_clinic: Mapped["Clinic"] = relationship(
         "Clinic",
         back_populates="owner",
@@ -55,96 +55,47 @@ class User(db.Model):
         foreign_keys="Clinic.owner_user_id",
     )
 
-    # Patients where this user is the primary doctor
-    patients: Mapped[List["Patient"]] = relationship(
-        "Patient",
-        back_populates="doctor",
-    )
+    patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="doctor")
+    installment_plans: Mapped[List["InstallmentPlan"]] = relationship("InstallmentPlan", back_populates="doctor")
 
-    # Installment plans for which this user is the doctor
-    installment_plans: Mapped[List["InstallmentPlan"]] = relationship(
-        "InstallmentPlan",
-        back_populates="doctor",
-    )
+    created_payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="created_by_user",
+                                                             foreign_keys="Payment.created_by")
+    approved_payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="approved_by_user",
+                                                              foreign_keys="Payment.approved_by")
+    sessions_payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="session_user",
+                                                              foreign_keys="Payment.session_user_id")
 
-    # Dual sign-off on payments
-    created_payments: Mapped[List["Payment"]] = relationship(
-        "Payment",
-        back_populates="created_by_user",
-        foreign_keys="Payment.created_by",
-    )
-    approved_payments: Mapped[List["Payment"]] = relationship(
-        "Payment",
-        back_populates="approved_by_user",
-        foreign_keys="Payment.approved_by",
-    )
+    created_transactions: Mapped[List["CashTransaction"]] = relationship("CashTransaction",
+                                                                         back_populates="created_by_user",
+                                                                         foreign_keys="CashTransaction.created_by")
+    approved_transactions: Mapped[List["CashTransaction"]] = relationship("CashTransaction",
+                                                                          back_populates="approved_by_user",
+                                                                          foreign_keys="CashTransaction.approved_by")
+    sessions_transactions: Mapped[List["CashTransaction"]] = relationship("CashTransaction",
+                                                                          back_populates="session_user",
+                                                                          foreign_keys="CashTransaction.session_user_id")
 
-    # Payments where this user was the logged-in session
-    sessions_payments: Mapped[List["Payment"]] = relationship(
-        "Payment",
-        back_populates="session_user",
-        foreign_keys="Payment.session_user_id",
-    )
+    sessions_closes: Mapped[List["DailyClose"]] = relationship("DailyClose", back_populates="session_user",
+                                                               foreign_keys="DailyClose.session_user_id")
+    closed_days: Mapped[list["DailyClose"]] = relationship("DailyClose", back_populates="closed_by_user",
+                                                           foreign_keys="DailyClose.closed_by")
+    approved_closes: Mapped[list["DailyClose"]] = relationship("DailyClose", back_populates="approved_by_user",
+                                                               foreign_keys="DailyClose.approved_by")
 
-    # Cash Transactions where this user was the logged-in session
-    sessions_transactions: Mapped[List["CashTransaction"]] = relationship(
-        "CashTransaction",
-        back_populates="session_user",
-        foreign_keys="CashTransaction.session_user_id",
-    )
-
-    # Daily Closes where this user was the logged-in session
-    sessions_closes: Mapped[List["DailyClose"]] = relationship(
-        "DailyClose",
-        back_populates="session_user",
-        foreign_keys="DailyClose.session_user_id",
-    )
-
-    # Tip Payouts where this user was the logged-in session
-    sessions_payouts: Mapped[List["TipPayout"]] = relationship(
-        "TipPayout",
-        back_populates="session_user",
-        foreign_keys="TipPayout.session_user_id",
-    )
-
-    # Dual sign-off on cash transactions
-    created_transactions: Mapped[List["CashTransaction"]] = relationship(
-        "CashTransaction",
-        back_populates="created_by_user",
-        foreign_keys="CashTransaction.created_by",
-    )
-    approved_transactions: Mapped[List["CashTransaction"]] = relationship(
-        "CashTransaction",
-        back_populates="approved_by_user",
-        foreign_keys="CashTransaction.approved_by",
-    )
-
-    closed_days: Mapped[list["DailyClose"]] = relationship(
-        "DailyClose",
-        back_populates="closed_by_user",
-        foreign_keys="DailyClose.closed_by",
-    )
-
-    approved_closes: Mapped[list["DailyClose"]] = relationship(
-        "DailyClose",
-        back_populates="approved_by_user",
-        foreign_keys="DailyClose.approved_by",
-    )
-
-    approved_payouts: Mapped[List["TipPayout"]] = relationship(
-        "TipPayout",
-        back_populates="approved_by_user",
-        foreign_keys="TipPayout.approved_by",
-    )
+    sessions_payouts: Mapped[List["TipPayout"]] = relationship("TipPayout", back_populates="session_user",
+                                                               foreign_keys="TipPayout.session_user_id")
+    approved_payouts: Mapped[List["TipPayout"]] = relationship("TipPayout", back_populates="approved_by_user",
+                                                               foreign_keys="TipPayout.approved_by")
 
     def set_password(self, password: str) -> None:
         self.password_hash = bcrypt.generate_password_hash(password).decode()
+        current_version = self.token_version or 0
+        self.token_version = current_version + 1
 
     def check_password(self, password: str) -> bool:
         return bcrypt.check_password_hash(self.password_hash, password)
 
     def set_pin(self, pin: str) -> None:
-        # pin is 4 digits, but we hash it like a password
         self.pin_hash = bcrypt.generate_password_hash(pin).decode()
 
     def check_pin(self, pin: str) -> bool:

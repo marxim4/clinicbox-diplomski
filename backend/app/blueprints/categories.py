@@ -3,7 +3,6 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from flask import Blueprint, jsonify, g
-from flask import request
 
 from ..extensions import db
 from ..utils.wrappers import login_required
