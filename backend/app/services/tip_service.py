@@ -15,10 +15,21 @@ from ..data_layer.clinic_repository import clinic_repo
 
 from ..schemas.tips import CreateTipRequestSchema
 from ..enums import CashTransactionType, TransactionStatus
-from ..enums.tip_payout_status_enum import TipPayoutStatus  # <--- Added this
+from ..enums.tip_payout_status_enum import TipPayoutStatus
 
 
 class TipService:
+    """
+    Service for managing the Tip (Gratuity) lifecycle.
+
+    This service maintains a 'Secondary Ledger' for staff gratuities, distinct from
+    the clinic's main revenue stream. It handles:
+    1. Accumulation: Recording tips earned via payments or direct contributions.
+    2. Accounting: Calculating real-time balances for each doctor.
+    3. Disbursement: Managing the payout workflow (withdrawal of funds), including
+       approval logic and physical cashbox reconciliation.
+    """
+
     def _auto_cash_for_tip_payout(
             self,
             clinic_id: int,
@@ -27,9 +38,12 @@ class TipService:
             payout: TipPayout,
     ):
         """
-        Creates the physical cash transaction (OUT) for a confirmed payout.
+        Internal helper to execute the physical cash movement for a confirmed payout.
+
+        When a doctor withdraws tips, this method creates a 'Cash Out' transaction
+        in the system, decreasing the physical cashbox balance to reflect the
+        handover of currency.
         """
-        # FIX: Ensure we use the cashbox assigned to the payout, or default
         cashbox_id = getattr(payout, 'cashbox_id', None)
         if cashbox_id:
             cashbox = cashbox_repo.get_in_clinic(cashbox_id, clinic_id)
@@ -68,6 +82,12 @@ class TipService:
             current_user: User,
             payload: CreateTipRequestSchema,
     ) -> Tuple[Optional[Tip], Optional[str]]:
+        """
+        Records a new tip entry.
+
+        This is typically invoked automatically during payment processing but can
+        be called directly for standalone tips.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -96,13 +116,12 @@ class TipService:
         )
         return tip, None
 
-    # -------- lists --------
-
     def list_tips_for_doctor(
             self,
             clinic_id: int,
             doctor_id: int,
     ):
+        """Retrieves tip history for a specific doctor."""
         return tip_repo.list_tips_for_doctor(clinic_id, doctor_id)
 
     def list_tips_for_patient(
@@ -110,21 +129,26 @@ class TipService:
             clinic_id: int,
             patient_id: int,
     ):
+        """Retrieves tip history associated with a specific patient."""
         return tip_repo.list_tips_for_patient(clinic_id, patient_id)
 
     def list_tips_for_plan(
             self,
             plan_id: int,
     ):
+        """Retrieves tips linked to a specific installment plan."""
         return tip_repo.list_tips_for_plan(plan_id)
-
-    # -------- balance --------
 
     def get_doctor_tip_balance(
             self,
             clinic_id: int,
             doctor_id: int,
     ):
+        """
+        Calculates the current available tip balance for a doctor.
+
+        Formula: Balance = (Total Lifetime Tips) - (Total Lifetime Payouts).
+        """
         total_earned = tip_repo.sum_tips_for_doctor(clinic_id, doctor_id)
         total_paid_out = tip_payout_repo.sum_payouts_for_doctor(clinic_id, doctor_id)
         balance = total_earned - total_paid_out
@@ -135,8 +159,6 @@ class TipService:
             "balance": balance,
         }
 
-    # -------- payouts --------
-
     def create_payout(
             self,
             current_user: User,
@@ -145,6 +167,16 @@ class TipService:
             amount: float,
             note: str | None,
     ) -> Tuple[Optional[TipPayout], Optional[str]]:
+        """
+        Initiates a request to withdraw accumulated tips.
+
+        Logic:
+        1. Solvency Check: Ensures the doctor has sufficient funds accumulated.
+        2. Policy Check: Determines if the payout requires Manager approval based on
+           clinic configuration (`requires_cash_approval`).
+        3. Execution: If approved immediately, money is moved. If pending, money
+           movement is deferred.
+        """
         clinic_id = current_user.clinic_id
         clinic = clinic_repo.get_by_id(clinic_id)
 
@@ -152,19 +184,15 @@ class TipService:
         if not doctor:
             return None, "doctor not found in this clinic"
 
-        # 1. Check Balance (Safety Check)
         balance = self.get_doctor_tip_balance(clinic_id, doctor_id)
         if amount > balance["balance"] + 0.0001:
             return None, "payout exceeds current tip balance"
 
-        # 2. Determine Status (Approval Logic)
-        status = TipPayoutStatus.PAID.value  # Default
+        status = TipPayoutStatus.PAID.value
 
-        # If clinic requires approval AND user is "Junior" (needs approval)
         if clinic.requires_cash_approval and current_user.requires_approval_for_actions:
             status = TipPayoutStatus.PENDING.value
 
-        # 3. Create Record
         payout = tip_payout_repo.create_payout(
             clinic_id=clinic_id,
             doctor_id=doctor_id,
@@ -176,7 +204,6 @@ class TipService:
             approved_by=current_user.user_id if status == TipPayoutStatus.PAID.value else None
         )
 
-        # 4. Move Money (ONLY IF PAID/CONFIRMED)
         if status == TipPayoutStatus.PAID.value:
             self._auto_cash_for_tip_payout(
                 clinic_id=clinic_id,
@@ -194,13 +221,14 @@ class TipService:
     ) -> Tuple[Optional[TipPayout], Optional[str]]:
         """
         Finalizes a PENDING tip payout.
-        Uses ROW LOCKING to prevent race conditions.
+
+        Uses database row locking to prevent race conditions (e.g., approving the
+        same payout twice). Includes a secondary solvency check to ensure funds
+        weren't withdrawn via another channel while this request was pending.
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        # 1. LOCK
-        # Use the get_with_lock method you added to tip_payout_repo
         payout = tip_payout_repo.get_with_lock(payout_id, approver.clinic_id)
 
         if not payout:
@@ -209,17 +237,14 @@ class TipService:
         if payout.status != TipPayoutStatus.PENDING.value:
             return None, "payout is not pending"
 
-        # 2. Re-Check Balance (Critical for race conditions)
-        # Since pending payouts didn't deduct yet, ensure funds are still there.
+        # Re-verify balance to ensure solvency has not changed during the pending period
         balance = self.get_doctor_tip_balance(approver.clinic_id, payout.doctor_id)
         if float(payout.amount) > balance["balance"] + 0.0001:
             return None, "cannot approve: payout amount exceeds current remaining balance"
 
-        # 3. Update Status
         payout.status = TipPayoutStatus.PAID.value
         payout.approved_by = approver.user_id
 
-        # 4. Move Money
         self._auto_cash_for_tip_payout(
             clinic_id=approver.clinic_id,
             user_id=approver.user_id,
@@ -235,8 +260,10 @@ class TipService:
             payout_id: int
     ) -> Tuple[Optional[TipPayout], Optional[str]]:
         """
-        Marks a payout as REJECTED and records who did it.
-        No money moves (Cashbox balance remains untouched).
+        Marks a tip payout request as REJECTED.
+
+        The funds remain in the doctor's balance, and no physical cash is moved.
+        The rejection is audit-logged using the rejector's ID.
         """
         if not rejector.can_approve_financials:
             return None, "permission denied"
@@ -249,11 +276,7 @@ class TipService:
         if payout.status != TipPayoutStatus.PENDING.value:
             return None, "payout is not pending"
 
-        # 1. Update Status
         payout.status = TipPayoutStatus.REJECTED.value
-
-        # 2. Record the Actor (Reuse the approved_by field)
-        # This tells us WHO rejected the request.
         payout.approved_by = rejector.user_id
 
         return payout, None
@@ -263,6 +286,7 @@ class TipService:
             clinic_id: int,
             doctor_id: int,
     ):
+        """Retrieves payout history for a specific doctor."""
         return tip_payout_repo.list_payouts_for_doctor(clinic_id, doctor_id)
 
 

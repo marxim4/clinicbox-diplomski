@@ -7,26 +7,48 @@ from ..models import User, DailyClose
 from ..data_layer.daily_close_repository import daily_close_repo
 from ..data_layer.cashbox_repository import cashbox_repo
 from ..data_layer.clinic_repository import clinic_repo
-from ..data_layer.payment_repository import payment_repo  # <--- Added Import
+from ..data_layer.payment_repository import payment_repo
 from ..services.cash_service import cash_service
 from ..schemas.daily_close import CreateDailyCloseRequestSchema
 from ..enums.daily_close_status_enum import DailyCloseStatus
 
 
 class DailyCloseService:
+    """
+    Service for managing the End-of-Day (EOD) financial reconciliation.
+
+    This service handles the 'Daily Close' workflow, which involves:
+    1. Reconciling physical cash counts with system expectations.
+    2. Calculating and recording variance (Overage/Shortage).
+    3. Enforcing the 'Clean Desk Policy' (blocking closure if payments are pending).
+    4. Managing the approval workflow for closes with significant discrepancies.
+    """
+
     def create_daily_close(
             self,
             current_user: User,
             session_user: User,
             payload: CreateDailyCloseRequestSchema,
     ):
+        """
+        Initiates a Daily Close for a specific cashbox.
+
+        Logic:
+        1. Enforces 'Clean Desk Policy': The register cannot be closed if there are
+           pending payments waiting for approval.
+        2. Validates the date (cannot close for the future or duplicate closes).
+        3. Calculates variance (Counted - Expected).
+        4. Determines status based on user role and clinic settings.
+        5. If immediately APPROVED, automatically adjusts the cashbox balance to match
+           the physical count via an adjustment transaction.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
 
         clinic = clinic_repo.get_by_id(clinic_id)
 
-        # 1. Decide Status
+        # Determine if approval is required
         status = DailyCloseStatus.APPROVED.value
         if clinic.requires_close_approval and current_user.requires_approval_for_actions:
             status = DailyCloseStatus.PENDING.value
@@ -35,16 +57,13 @@ class DailyCloseService:
         if not cashbox:
             return None, "cashbox not found"
 
-        # --- CLEAN DESK POLICY CHECK ---
-        # Block closing if there are pending payments that need approval/rejection first.
+        # Check for pending payments (Clean Desk Policy)
         pending_count = payment_repo.count_pending_for_cashbox(cashbox.cashbox_id, clinic_id)
         if pending_count > 0:
             return None, f"Cannot close: there are {pending_count} pending payments. Approve or reject them first."
-        # -------------------------------
 
         day = payload.date or DateType.today()
 
-        # --- Prevent Future Dates ---
         if day > DateType.today():
             return None, "cannot close register for a future date"
 
@@ -54,15 +73,14 @@ class DailyCloseService:
             day=day,
         )
         if existing:
-            # The test asserts "already closed" is in the error string.
             return None, "register is already closed for this date"
 
         expected_total = float(cashbox.current_amount or 0)
         counted_total = float(payload.counted_total)
         variance = round(counted_total - expected_total, 2)
 
-        # 2. Adjust Cashbox (ONLY IF APPROVED)
-        # If PENDING, we leave the cashbox balance alone until approved.
+        # If Approved immediately, adjust the cashbox now.
+        # If Pending, the cashbox balance remains 'incorrect' until the Manager approves.
         if status == DailyCloseStatus.APPROVED.value:
             _adj, adjust_error = cash_service.adjust_cashbox_to_counted(
                 current_user=current_user,
@@ -74,7 +92,6 @@ class DailyCloseService:
             if adjust_error:
                 return None, adjust_error
 
-        # 3. Create Record
         close = daily_close_repo.create_close(
             clinic_id=clinic_id,
             cashbox_id=cashbox.cashbox_id,
@@ -93,12 +110,15 @@ class DailyCloseService:
     def approve_daily_close(self, approver: User, close_id: int) -> Tuple[Optional[DailyClose], Optional[str]]:
         """
         Finalizes a PENDING daily close.
-        Uses ROW LOCKING to prevent race conditions.
+
+        This action is delayed until a Manager reviews the discrepancy.
+        Once approved, the system creates the necessary adjustment transaction
+        to synchronize the cashbox balance with the reported physical count.
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        # 1. Fetch with LOCK (Prevents race conditions)
+        # Lock to prevent race conditions during approval
         close = daily_close_repo.get_with_lock(close_id, approver.clinic_id)
 
         if not close:
@@ -107,11 +127,10 @@ class DailyCloseService:
         if close.status != DailyCloseStatus.PENDING.value:
             return None, "daily close is not pending"
 
-        # 2. Adjust Cashbox NOW (Delayed Action)
-        # We use the 'approver' as the current_user causing the adjustment
+        # Apply the delayed balance adjustment
         _adj, err = cash_service.adjust_cashbox_to_counted(
             current_user=approver,
-            session_user=close.session_user,  # Keep the original session user for history
+            session_user=close.session_user,  # Preserve original session context
             cashbox_id=close.cashbox_id,
             counted_total=float(close.counted_total),
             note=f"Approved Close #{close.close_id}: {close.note or ''}",
@@ -119,7 +138,6 @@ class DailyCloseService:
         if err:
             return None, err
 
-        # 3. Update Status
         close.status = DailyCloseStatus.APPROVED.value
         close.approved_by = approver.user_id
 
@@ -127,13 +145,14 @@ class DailyCloseService:
 
     def reject_daily_close(self, rejector: User, close_id: int) -> Tuple[Optional[DailyClose], Optional[str]]:
         """
-        Marks a daily close as REJECTED and records who did it.
-        This forces the receptionist to create a new, correct one.
+        Marks a daily close as REJECTED.
+
+        This forces the staff to recount and submit a new Daily Close request.
+        The rejected record is kept for audit purposes.
         """
         if not rejector.can_approve_financials:
             return None, "permission denied"
 
-        # Lock row to prevent simultaneous Approve/Reject
         close = daily_close_repo.get_with_lock(close_id, rejector.clinic_id)
 
         if not close:
@@ -142,14 +161,8 @@ class DailyCloseService:
         if close.status != DailyCloseStatus.PENDING.value:
             return None, "daily close is not pending"
 
-        # 1. Update Status
         close.status = DailyCloseStatus.REJECTED.value
-
-        # 2. Record the Actor (Reuse the field)
-        # Even though it says 'approved_by', in this context it means 'resolved_by'
         close.approved_by = rejector.user_id
-
-        # Note: We do NOT touch the cashbox here. The money stays as is.
 
         return close, None
 
@@ -158,6 +171,7 @@ class DailyCloseService:
             current_user: User,
             close_id: int,
     ):
+        """Retrieves a specific daily close record."""
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -178,6 +192,7 @@ class DailyCloseService:
             page: int | None,
             page_size: int | None,
     ):
+        """Searches daily close history with filters."""
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, None, "user has no clinic assigned"
@@ -194,8 +209,10 @@ class DailyCloseService:
 
     def is_today_closed(self, cashbox_id: int, clinic_id: int) -> bool:
         """
-        Checks if the register is closed for today.
-        Used to block new payments/transactions.
+        Checks if the register is closed for the current day.
+
+        Used as a guard clause in other services (e.g., PaymentService) to block
+        financial activity after the books have been closed.
         """
         cashbox = cashbox_repo.get_in_clinic(cashbox_id, clinic_id)
 

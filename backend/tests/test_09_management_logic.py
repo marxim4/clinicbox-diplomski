@@ -7,8 +7,10 @@ from app.services.clinic_service import clinic_service
 from app.services.category_service import category_service
 
 
-# --- MOCK SCHEMAS FOR TESTING ---
-# These mimic the Pydantic schemas expected by your Services
+# --- Test Doubles (Mocks) ---
+# These classes mock the Pydantic schemas required by the Service Layer,
+# allowing us to test logic without engaging the HTTP layer.
+
 class MockCreateUserSchema:
     def __init__(self, email, name, role, password, pin=None):
         self.email = email
@@ -34,19 +36,15 @@ class MockCreateCategorySchema:
         self.is_pinned = is_pinned
 
 
-# ------------------------------------------------------------------------------
-# TEST 1: User Logic & Constraints
-# ------------------------------------------------------------------------------
-
 def test_user_email_uniqueness_via_service(db_session, clinic_factory, user_factory):
     """
-    Scenario: Manager tries to create two users with the same email 'nurse@test.com'.
-    Expected: Service should return an error for the second attempt.
+    Verifies Multi-Tenancy Logic:
+    Ensures that the Service Layer enforces email uniqueness within the clinic scope.
     """
     clinic = clinic_factory()
     owner = user_factory(clinic, role=UserRole.OWNER)
 
-    # 1. Create First User -> Success
+    # 1. Create First User (Success)
     payload1 = MockCreateUserSchema(
         email="nurse@test.com",
         name="Nurse 1",
@@ -58,7 +56,7 @@ def test_user_email_uniqueness_via_service(db_session, clinic_factory, user_fact
     assert error1 is None
     assert user1 is not None
 
-    # 2. Create Second User (Same Email) -> Error
+    # 2. Create Second User with same email (Failure)
     payload2 = MockCreateUserSchema(
         email="nurse@test.com",
         name="Nurse Imposter",
@@ -74,21 +72,22 @@ def test_user_email_uniqueness_via_service(db_session, clinic_factory, user_fact
 
 def test_user_permissions_db_constraint(db_session, clinic_factory):
     """
-    Scenario: Verify the DB CheckConstraint logic.
-    Rule: A user CANNOT be both 'can_approve_financials=True' AND 'requires_approval=True'.
-    (You cannot be a boss who needs permission from a boss).
+    Verifies Defense-in-Depth (Database Constraints).
+
+    The database must reject a user configuration where:
+    (can_approve_financials=True) AND (requires_approval_for_actions=True).
+    This logic error (a boss who needs permission) is blocked at the SQL level.
     """
     clinic = clinic_factory()
 
-    # 1. Create a user with invalid contradictory permissions
-    # We bypass the service and go straight to DB to test the SQL constraint
+    # Attempt to bypass service layer and insert invalid data directly
     confused_user = User(
         clinic_id=clinic.clinic_id,
         name="Confused Guy",
         email="confused@test.com",
         role=UserRole.MANAGER,
         is_active=True,
-        # THE INVALID COMBO:
+        # Invalid Combination:
         can_approve_financials=True,
         requires_approval_for_actions=True
     )
@@ -96,53 +95,44 @@ def test_user_permissions_db_constraint(db_session, clinic_factory):
 
     db_session.add(confused_user)
 
-    # 2. Verify Database Rejects It
-    # This expects an IntegrityError (CheckConstraint violation)
+    # Expecting IntegrityError from SQLAlchemy
     try:
         db_session.commit()
-        pytest.fail("Database allowed a user to have both permissions set to True!")
+        pytest.fail("Database constraint failed: Invalid permission combination accepted.")
     except IntegrityError:
-        db_session.rollback()  # Correct behavior
+        db_session.rollback()  # Constraint functioned correctly
 
-
-# ------------------------------------------------------------------------------
-# TEST 2: Clinic Settings Logic
-# ------------------------------------------------------------------------------
 
 def test_update_clinic_settings(db_session, clinic_factory, user_factory):
     """
-    Scenario: Owner changes clinic policy to Require Payment Approval.
+    Verifies that clinic-wide policy settings can be updated and persisted.
     """
     clinic = clinic_factory(settings={"requires_payment_approval": False})
     owner = user_factory(clinic, role=UserRole.OWNER)
 
     assert clinic.requires_payment_approval is False
 
-    # Update Settings
+    # Act: Update Settings
     payload = MockUpdateClinicSettingsSchema(requires_payment_approval=True)
-
     updated_clinic, error = clinic_service.update_settings(owner, payload)
 
+    # Assert
     assert error is None
     assert updated_clinic.requires_payment_approval is True
 
-    # Check DB persistence
+    # Verify Persistence
     db_session.refresh(clinic)
     assert clinic.requires_payment_approval is True
 
 
-# ------------------------------------------------------------------------------
-# TEST 3: Category Logic
-# ------------------------------------------------------------------------------
-
 def test_category_lifecycle(db_session, clinic_factory, user_factory):
     """
-    Scenario: Create categories, list them, and try duplicates.
+    Verifies the CRUD lifecycle of financial categories.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER)
 
-    # 1. Create "Consultations"
+    # 1. Create Pinned Category
     cat1, err1 = category_service.create_category(
         manager, MockCreateCategorySchema(name="Consultations", is_pinned=True)
     )
@@ -150,13 +140,13 @@ def test_category_lifecycle(db_session, clinic_factory, user_factory):
     assert cat1.name == "Consultations"
     assert cat1.is_pinned is True
 
-    # 2. Create "Supplements"
+    # 2. Create Standard Category
     cat2, err2 = category_service.create_category(
         manager, MockCreateCategorySchema(name="Supplements")
     )
     assert err2 is None
 
-    # 3. List Categories
+    # 3. Verify Listing
     items, err_list = category_service.list_categories(manager)
     assert len(items) == 2
     names = [c.name for c in items]
@@ -166,17 +156,17 @@ def test_category_lifecycle(db_session, clinic_factory, user_factory):
 
 def test_category_uniqueness(db_session, clinic_factory, user_factory):
     """
-    Scenario: Prevent duplicate category names in the same clinic.
+    Verifies that the database enforces unique category names per clinic.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER)
 
-    # 1. Create "Dentistry"
+    # 1. Create Initial Category
     category_service.create_category(
         manager, MockCreateCategorySchema(name="Dentistry")
     )
 
-    # 2. Try creating "Dentistry" again -> Should Fail
+    # 2. Attempt Duplicate via Service (Should fail gracefully)
     dup, error = category_service.create_category(
         manager, MockCreateCategorySchema(name="Dentistry")
     )
@@ -184,12 +174,11 @@ def test_category_uniqueness(db_session, clinic_factory, user_factory):
     assert dup is None
     assert error == "category with this name already exists in this clinic"
 
-    # 3. Verify DB Constraint (Double Check)
-    # If we bypass service, DB should still block it
+    # 3. Attempt Duplicate via DB Direct (Should fail with IntegrityError)
     try:
         dup_db = Category(clinic_id=clinic.clinic_id, name="Dentistry")
         db_session.add(dup_db)
         db_session.commit()
-        pytest.fail("DB Unique Constraint failed for Category Name")
+        pytest.fail("Database unique constraint failed for Category Name")
     except IntegrityError:
         db_session.rollback()

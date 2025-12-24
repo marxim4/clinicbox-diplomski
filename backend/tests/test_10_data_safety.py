@@ -1,21 +1,25 @@
 import pytest
 import uuid
 from sqlalchemy.exc import IntegrityError
-from app.models import Patient, Payment
-from app.enums import UserRole, PaymentMethod, PlanStatus
+from app.models import Payment
+from app.enums import UserRole, PaymentMethod
 from app.services.payment_service import payment_service
 from app.schemas.payments import CreatePaymentRequestSchema
 
 
 def unique_email(prefix):
+    """Helper to generate unique emails to avoid constraint collisions."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}@test.com"
 
 
 def test_delete_patient_blocked_by_financials(db_session, clinic_factory, user_factory, patient_factory, plan_factory,
                                               cashbox_factory):
     """
-    Safety Rule #1: You CANNOT delete a patient who has active plans.
-    This works because InstallmentPlan.patient_id is NOT NULL.
+    Verifies Referential Integrity.
+
+    Ensures that the database strictly blocks the deletion of a Patient record
+    if active financial records (Installment Plans) exist. This prevents
+    orphaned financial data and ensures audit trails remain linked to a subject.
     """
     clinic = clinic_factory()
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email=unique_email("doc"))
@@ -29,7 +33,7 @@ def test_delete_patient_blocked_by_financials(db_session, clinic_factory, user_f
     patient = patient_factory(clinic, doctor)
     plan = plan_factory(clinic, patient, doctor, total_amount=100.0)
 
-    # 2. Make Payment
+    # 2. Make Payment (Anchoring the financial data)
     payment_payload = CreatePaymentRequestSchema(
         plan_id=plan.plan_id,
         amount=50.0,
@@ -42,23 +46,27 @@ def test_delete_patient_blocked_by_financials(db_session, clinic_factory, user_f
         payload=payment_payload
     )
 
-    # 3. Try to DELETE
+    # 3. Attempt to DELETE the Patient
     db_session.delete(patient)
 
-    # 4. Assert Database BLOCKS it
+    # 4. Assert Database Rejection
     try:
         db_session.commit()
-        pytest.fail("DANGER: System allowed deleting a patient with financial records!")
+        pytest.fail("Database constraint failed: Allowed deletion of patient with active financials.")
     except IntegrityError:
         db_session.rollback()
-        # Pass: The database blocked the delete (InstallmentPlan requires patient_id).
+        # Pass: The Foreign Key constraint correctly blocked the deletion.
 
 
 def test_plan_restructuring_scenario(db_session, clinic_factory, user_factory, patient_factory, plan_factory,
                                      cashbox_factory):
     """
-    Scenario: 'Refinancing' a Plan.
-    Verifies that deleting a plan DOES NOT delete its payments (Data Safety).
+    Verifies Financial Persistence (Anti-Cascade).
+
+    Simulates a 'Plan Restructuring' scenario where an old plan is deleted to be
+    replaced by a new one. Crucially, asserts that the PAYMENTS made towards the
+    old plan are NOT deleted (Cascade Disable). They must remain in the database,
+    unlinked (orphaned), to preserve the accuracy of the cashbook.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email=unique_email("man_refinance"))
@@ -69,10 +77,10 @@ def test_plan_restructuring_scenario(db_session, clinic_factory, user_factory, p
     cashbox.is_default = True
     db_session.commit()
 
-    # --- STEP 1: Old Plan A (€1000) ---
+    # Step 1: Create Plan A (€1000)
     plan_a = plan_factory(clinic, patient, doctor, total_amount=1000.0)
 
-    # Pay €500 towards Plan A
+    # Step 2: Pay €500 towards Plan A
     pay_payload = CreatePaymentRequestSchema(
         plan_id=plan_a.plan_id,
         amount=500.0,
@@ -85,24 +93,16 @@ def test_plan_restructuring_scenario(db_session, clinic_factory, user_factory, p
         payload=pay_payload
     )
 
-    # Capture the payment ID to check later
-    assert len(plan_a.payments) == 1
+    # Capture ID for verification
     payment_id = plan_a.payments[0].payment_id
 
-    # --- STEP 2: Delete Plan A ---
-    # Since we removed the cascade, this should NOT delete the payment.
-    # It might succeed (setting payment.plan_id = NULL) or fail (if plan_id is not null).
-    # Either way, the PAYMENT must survive.
-
+    # Step 3: Delete Plan A (Simulating a restructuring/cancellation)
     db_session.delete(plan_a)
-    db_session.commit()  # If this passes, it means plan_id is nullable.
+    db_session.commit()
 
-    # --- STEP 3: Safety Check ---
-    # The payment must still exist in the database (Orphaned but safe)
-    #
-
+    # Step 4: Verify Payment Survival
     surviving_payment = db_session.get(Payment, payment_id)
 
-    assert surviving_payment is not None, "FATAL: Deleting the plan deleted the money! Cascade is still active."
-    assert surviving_payment.plan_id is None, "Payment should be unlinked from the deleted plan."
+    assert surviving_payment is not None, "Financial Record Loss: Deleting the plan destroyed the payment record."
+    assert surviving_payment.plan_id is None, "Payment should be unlinked (NULL) from the deleted plan."
     assert float(surviving_payment.amount) == 500.0

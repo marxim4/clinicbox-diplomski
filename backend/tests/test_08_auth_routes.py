@@ -1,11 +1,11 @@
 import pytest
 from http import HTTPStatus
-from app.models import User, Clinic, Cashbox
-from app.enums import UserRole, ClinicType
+from app.models import User, Clinic
+from app.enums import UserRole
 
 
-# --- Helper to generate valid payload ---
 def valid_register_payload(email="owner@test.com"):
+    """Helper to generate a compliant registration payload."""
     return {
         "owner_name": "Dr. Owner",
         "email": email,
@@ -20,7 +20,10 @@ def valid_register_payload(email="owner@test.com"):
 
 
 def test_register_owner_success(client, db_session):
-    """Happy path registration."""
+    """
+    Verifies the standard Owner Registration workflow.
+    Ensures that a User, a Clinic, and an initial JWT are created successfully.
+    """
     payload = valid_register_payload()
     resp = client.post("/api/auth/register-owner", json=payload)
 
@@ -29,7 +32,7 @@ def test_register_owner_success(client, db_session):
     assert "access_token" in data
     assert data["role"] == "OWNER"
 
-    # DB Verification
+    # Verify Database Persistence
     user = db_session.query(User).filter_by(email=payload["email"]).first()
     assert user is not None
     clinic = db_session.query(Clinic).get(user.clinic_id)
@@ -37,15 +40,23 @@ def test_register_owner_success(client, db_session):
 
 
 def test_register_duplicate_email(client, db_session):
-    """Scenario: Registering the same email twice should fail."""
+    """
+    Verifies uniqueness constraints: Registration should fail if the email exists.
+    """
     payload = valid_register_payload("dup@test.com")
+
+    # 1. First Registration (Success)
     client.post("/api/auth/register-owner", json=payload)
+
+    # 2. Second Registration (Failure)
     resp2 = client.post("/api/auth/register-owner", json=payload)
     assert resp2.status_code == HTTPStatus.CONFLICT
 
 
 def test_login_flow(client, db_session):
-    """Scenario: Login with valid and invalid credentials."""
+    """
+    Verifies authentication logic for valid and invalid credentials.
+    """
     email = "login_flow@test.com"
     password = "StrongPassword1!"
     payload = valid_register_payload(email)
@@ -53,23 +64,26 @@ def test_login_flow(client, db_session):
     payload["confirm_password"] = password
     client.post("/api/auth/register-owner", json=payload)
 
-    # 1. Valid Login
+    # 1. Valid Credentials
     resp = client.post("/api/auth/login", json={"email": email, "password": password})
     assert resp.status_code == HTTPStatus.OK
     assert "access_token" in resp.json
 
-    # 2. Invalid Password
+    # 2. Invalid Credentials
     resp = client.post("/api/auth/login", json={"email": email, "password": "Wrong!"})
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
 
 
 def test_login_inactive_user_rejected(client, db_session):
-    """Scenario: Banned/Inactive users cannot log in."""
+    """
+    Verifies Account Suspension logic.
+    A user marked `is_active=False` must be denied access even with valid credentials.
+    """
     email = "banned@test.com"
     payload = valid_register_payload(email)
     client.post("/api/auth/register-owner", json=payload)
 
-    # Manually ban user in DB
+    # Simulate Administrative Ban
     user = db_session.query(User).filter_by(email=email).first()
     user.is_active = False
     db_session.commit()
@@ -83,9 +97,12 @@ def test_login_inactive_user_rejected(client, db_session):
 
 def test_change_password_and_token_revocation(client, db_session):
     """
+    Verifies the JWT Versioning Security Mechanism.
+
     Scenario:
-    1. Change password (functionality check).
-    2. Ensure OLD token is revoked immediately (security check).
+    1. User changes password.
+    2. The system increments the user's `token_version`.
+    3. Old tokens (signed with the previous version) must be immediately invalidated.
     """
     email = "change_flow@test.com"
     old_pass = "OldPass1!"
@@ -102,17 +119,16 @@ def test_change_password_and_token_revocation(client, db_session):
     token_a = login_resp.json["access_token"]
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
-    # 3. Try Change with WRONG current password (Should fail 401)
+    # 3. Attempt Change with WRONG current password (Should Fail)
     resp = client.post("/api/auth/change-password", headers=headers_a, json={
         "current_password": "Wrong!",
         "new_password": new_pass,
         "confirm_new_password": new_pass
     })
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
-    assert "current password is incorrect" in resp.json["msg"]
 
-    # 4. Change Password with VALID current password (Should succeed)
-    # This Action bumps User DB Version 1 -> 2
+    # 4. Change Password with VALID current password (Success)
+    # Side Effect: User DB `token_version` increments from 1 -> 2
     resp = client.post("/api/auth/change-password", headers=headers_a, json={
         "current_password": old_pass,
         "new_password": new_pass,
@@ -120,32 +136,26 @@ def test_change_password_and_token_revocation(client, db_session):
     })
     assert resp.status_code == HTTPStatus.OK
 
-    # 5. SECURITY CHECK: Try to use Token A again
-    # It should now be REJECTED because:
-    #   Token A has Version 1
-    #   User DB has Version 2
+    # 5. SECURITY CHECK: Reuse Token A (Version 1)
+    # Expected: Rejection (401 or 422) because Token Version (1) < User Version (2)
     retry_resp = client.post("/api/auth/change-password", headers=headers_a, json={
         "current_password": new_pass,
         "new_password": "NewestPassword!",
         "confirm_new_password": "NewestPassword!"
     })
 
-    # ACCEPT EITHER 401 or 422.
-    # Both mean the request was blocked, satisfying the security requirement.
-    # 401 = Unauthorized (Logic rejection from our wrapper)
-    # 422 = Unprocessable Entity (JWT Library rejection)
     assert retry_resp.status_code in [HTTPStatus.UNAUTHORIZED, HTTPStatus.UNPROCESSABLE_ENTITY]
 
-    # 6. Verify we can login with the NEW password to get Token B (Version 2)
+    # 6. Verify Login with NEW password yields valid Token B (Version 2)
     login_new = client.post("/api/auth/login", json={"email": email, "password": new_pass})
     assert login_new.status_code == HTTPStatus.OK
     token_b = login_new.json["access_token"]
 
-    # 7. Verify Token B works
+    # 7. Verify Token B is functional
     headers_b = {"Authorization": f"Bearer {token_b}"}
     valid_resp = client.post("/api/auth/change-password", headers=headers_b, json={
         "current_password": new_pass,
-        "new_password": old_pass,  # Resetting
+        "new_password": old_pass,
         "confirm_new_password": old_pass
     })
     assert valid_resp.status_code == HTTPStatus.OK

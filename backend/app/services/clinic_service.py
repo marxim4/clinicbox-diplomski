@@ -1,12 +1,28 @@
 from __future__ import annotations
+
 from typing import Tuple, Optional
+
 from ..models import User, Clinic
 from ..data_layer.clinic_repository import clinic_repo
 from ..schemas.clinic import UpdateClinicSettingsSchema, UpdateClinicDetailsSchema
 
 
 class ClinicService:
-    def get_current_clinic(self, current_user: User):
+    """
+    Service for managing Clinic-level configurations and details.
+
+    This service acts as the 'Policy Engine' for the application. It handles the
+    modification of the clinic entity, including its operational settings
+    (e.g., approval workflows, shared terminal modes) and basic metadata.
+    """
+
+    def get_current_clinic(self, current_user: User) -> Tuple[Optional[Clinic], Optional[str]]:
+        """
+        Retrieves the clinic associated with the current authenticated user.
+
+        Validates that the user has a valid clinic assignment before returning
+        the clinic entity.
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic"
 
@@ -19,10 +35,16 @@ class ClinicService:
             self,
             current_user: User,
             payload: UpdateClinicDetailsSchema
-    ):
+    ) -> Tuple[Optional[Clinic], Optional[str]]:
+        """
+        Updates the basic metadata of the clinic.
 
+        This includes display name, physical address, and localization settings
+        (currency, default language) which affect how data is presented to all users.
+        """
         clinic, error = self.get_current_clinic(current_user)
-        if error: return None, error
+        if error:
+            return None, error
 
         updated_clinic = clinic_repo.update_basic_info(
             clinic,
@@ -37,10 +59,17 @@ class ClinicService:
             self,
             current_user: User,
             payload: UpdateClinicSettingsSchema
-    ):
+    ) -> Tuple[Optional[Clinic], Optional[str]]:
+        """
+        Updates the operational configuration (Security Policy) of the clinic.
 
+        These settings determine the strictness of the application's workflows,
+        such as requiring manager approval for financial actions or enforcing
+        PIN verification for shared terminal usage.
+        """
         clinic, error = self.get_current_clinic(current_user)
-        if error: return None, error
+        if error:
+            return None, error
 
         updated_clinic = clinic_repo.update_settings(
             clinic,

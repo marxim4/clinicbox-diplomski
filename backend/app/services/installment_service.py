@@ -14,11 +14,26 @@ from ..enums import PlanStatus
 
 
 class InstallmentService:
+    """
+    Service for managing patient financial plans (Installment Plans).
+
+    This service handles the lifecycle of payment plans, including creation,
+    scheduling, updates, and cancellation. It enforces strict data integrity rules,
+    such as preventing the restructuring of installment schedules once payments
+    have commenced.
+    """
+
     def create_plan(
             self,
             current_user: User,
             payload: CreateInstallmentPlanRequestSchema,
     ) -> Tuple[Optional[InstallmentPlan], Optional[str]]:
+        """
+        Creates a new installment plan for a patient.
+
+        Validates that both the patient and the assigned doctor belong to the
+        current user's clinic before creating the plan and its scheduled installments.
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
@@ -60,6 +75,7 @@ class InstallmentService:
             clinic_id: int,
             plan_id: int,
     ):
+        """Retrieves a specific plan, ensuring it belongs to the clinic."""
         return installment_plan_repo.get_plan_in_clinic(plan_id, clinic_id)
 
     def list_plans_for_clinic(
@@ -70,6 +86,7 @@ class InstallmentService:
             doctor_id: int | None = None,
             status: PlanStatus | None = None,
     ):
+        """Lists all plans for a clinic, with optional filtering."""
         return installment_plan_repo.list_for_clinic(
             clinic_id,
             patient_id=patient_id,
@@ -87,6 +104,7 @@ class InstallmentService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """Paginated list of plans for UI display."""
         return installment_plan_repo.list_for_clinic_paginated(
             clinic_id,
             patient_id=patient_id,
@@ -102,6 +120,14 @@ class InstallmentService:
             plan_id: int,
             payload: UpdateInstallmentPlanRequestSchema,
     ) -> Tuple[Optional[InstallmentPlan], Optional[str]]:
+        """
+        Updates an existing installment plan.
+
+        Crucial Logic: This method checks if any payments have already been made
+        towards this plan. If payments exist, modification of the installment
+        structure (amounts/dates) is blocked to preserve the audit trail and
+        financial integrity. Only basic metadata can be updated in that case.
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
@@ -149,6 +175,9 @@ class InstallmentService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """
+        Retrieves installments due in the future (Expected Revenue).
+        """
         return installment_plan_repo.list_upcoming_installments_for_clinic(
             clinic_id=clinic_id,
             doctor_id=doctor_id,
@@ -168,6 +197,9 @@ class InstallmentService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """
+        Retrieves installments that are past their due date and unpaid (Arrears).
+        """
         return installment_plan_repo.list_overdue_installments_for_clinic(
             clinic_id=clinic_id,
             doctor_id=doctor_id,
@@ -182,6 +214,11 @@ class InstallmentService:
             current_user: User,
             plan_id: int
     ):
+        """
+        Marks a plan as CANCELLED.
+
+        This halts any future billing but retains the record for historical purposes.
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 

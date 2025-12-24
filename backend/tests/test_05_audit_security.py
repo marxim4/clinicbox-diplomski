@@ -4,11 +4,14 @@ from app.enums import AuditAction
 
 
 def test_audit_log_creation_and_hashing(db_session, clinic_factory, user_factory):
+    """
+    Verifies the cryptographic chaining integrity. Ensures that each new log entry
+    correctly incorporates the hash of the preceding entry, forming an immutable chain.
+    """
     clinic = clinic_factory()
     user = user_factory(clinic)
 
     # 1. Create First Log Entry
-    # FIX: Unpack the tuple result
     log1, error = audit_log_service.log(
         current_user=user,
         action=AuditAction.CREATE,
@@ -34,10 +37,10 @@ def test_audit_log_creation_and_hashing(db_session, clinic_factory, user_factory
     assert error is None
     db_session.commit()
 
-    # 3. Security Verification
+    # 3. Security Verification: Chain Continuity
     assert log2.prev_hash == log1.curr_hash
 
-    # 4. Verify Re-computation
+    # 4. Verify Hash Computation Algorithm
     recomputed = audit_log_service._compute_hash(
         prev_hash=log2.prev_hash,
         clinic_id=log2.clinic_id,
@@ -56,11 +59,14 @@ def test_audit_log_creation_and_hashing(db_session, clinic_factory, user_factory
 
 
 def test_tamper_evidence(db_session, clinic_factory, user_factory):
+    """
+    Verifies the tamper-detection capability. Simulates a direct database manipulation
+    attack and asserts that the verification algorithm identifies the compromise.
+    """
     clinic = clinic_factory()
     user = user_factory(clinic)
 
-    # Create a log
-    # FIX: Unpack result
+    # 1. Create a legitimate log
     log, error = audit_log_service.log(
         current_user=user,
         action=AuditAction.CREATE,
@@ -73,11 +79,11 @@ def test_tamper_evidence(db_session, clinic_factory, user_factory):
 
     original_hash = log.curr_hash
 
-    # --- ATTACK: Malicious Admin changes the data in DB directly ---
+    # 2. Simulate Attack: Malicious actor changes data in DB directly
     log.after_data = {"amount": 500000}
     db_session.commit()
 
-    # --- VERIFY: The system detects the lie ---
+    # 3. Verify: System detects the discrepancy
     recomputed = audit_log_service._compute_hash(
         prev_hash=log.prev_hash,
         clinic_id=log.clinic_id,

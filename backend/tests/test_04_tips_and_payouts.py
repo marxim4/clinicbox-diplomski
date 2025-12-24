@@ -1,6 +1,5 @@
 import pytest
 from app.enums import UserRole, PaymentMethod, CashTransactionType
-# Assuming TipPayoutStatus is in app.enums.tip_payout_status_enum based on your service code
 from app.enums.tip_payout_status_enum import TipPayoutStatus
 from app.services.payment_service import payment_service
 from app.services.tip_service import tip_service
@@ -11,17 +10,18 @@ from app.models import Tip, TipPayout
 
 def test_manual_tip_increases_cashbox_and_pool(db_session, clinic_factory, user_factory, cashbox_factory):
     """
-    Scenario: Receptionist adds a manual tip (e.g. patient gave €50 cash just for the doctor).
+    Verifies that a manual tip entry (without underlying debt payment) correctly
+    updates both the physical cashbox balance and the doctor's virtual tip ledger.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_man_tip@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_man_tip@test.com")
     cashbox = cashbox_factory(clinic)
 
-    # 1. Create a "Pure Tip"
+    # Act: Create a "Pure Tip" of €50
     payload = CreatePaymentRequestSchema(
         doctor_id=doctor.user_id,
-        amount=0.0,  # Pure tip
+        amount=0.0,
         tip_amount=50.0,
         cashbox_id=cashbox.cashbox_id,
         method=PaymentMethod.CASH
@@ -33,11 +33,11 @@ def test_manual_tip_increases_cashbox_and_pool(db_session, clinic_factory, user_
 
     assert error is None
 
-    # 2. Verify Cashbox (Money came IN: 0.0 + 50.0 = 50.0)
+    # Assert 1: Physical Cashbox increased
     db_session.refresh(cashbox)
     assert float(cashbox.current_amount) == 50.0
 
-    # 3. Verify Doctor's Tip Record created
+    # Assert 2: Virtual Ledger updated
     tips = db_session.query(Tip).filter_by(doctor_id=doctor.user_id).all()
     assert len(tips) == 1
     assert float(tips[0].amount) == 50.0
@@ -45,20 +45,19 @@ def test_manual_tip_increases_cashbox_and_pool(db_session, clinic_factory, user_
 
 def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox_factory):
     """
-    Scenario: Doctor withdraws accumulated tips.
+    Verifies the complete lifecycle of a tip withdrawal: accumulation,
+    payout request creation, approval, and physical cash deduction.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_payout@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_payout@test.com")
 
-    # --- FIX: Create Cashbox AND mark it as default ---
-    # This allows the tip_service to find the correct register to deduct money from.
+    # Arrange: Set default cashbox for payout deductions
     cashbox = cashbox_factory(clinic)
     cashbox.is_default = True
     db_session.commit()
-    # --------------------------------------------------
 
-    # 1. Seed the system: Give the doctor €100 in tips
+    # Step 1: Accumulate funds (Give doctor €100 in tips)
     payload_in = CreatePaymentRequestSchema(
         doctor_id=doctor.user_id,
         amount=0.0,
@@ -68,11 +67,10 @@ def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox
     )
     payment_service.create_payment(current_user=manager, session_user=manager, payload=payload_in)
 
-    # Verify setup
     db_session.refresh(cashbox)
     assert float(cashbox.current_amount) == 100.0
 
-    # 2. Create Payout Request
+    # Step 2: Create Payout Request
     payload_out = CreateTipPayoutRequestSchema(
         amount=100.0,
         note="Weekly withdrawal"
@@ -87,18 +85,17 @@ def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox
     )
     assert error is None
 
-    # Logic: If it went to PENDING (e.g. junior user or strict settings), approve it.
+    # Step 3: Approval (if pending)
     if payout.status == TipPayoutStatus.PENDING.value:
         payout, _ = tip_service.approve_payout(approver=manager, payout_id=payout.payout_id)
 
-    # --- ASSERTION FIX: Compare against TipPayoutStatus.PAID ---
     assert payout.status == TipPayoutStatus.PAID.value
 
-    # 3. Verify Cashbox Dropped (100.0 - 100.0 = 0.0)
+    # Step 4: Verify Physical Deduction
     db_session.refresh(cashbox)
     assert float(cashbox.current_amount) == 0.0
 
-    # 4. Verify Transaction Log
+    # Step 5: Verify Audit Log
     last_tx = cashbox.transactions[-1]
     assert last_tx.type == CashTransactionType.OUT
     assert float(last_tx.amount) == 100.0
@@ -106,19 +103,18 @@ def test_tip_payout_happy_path(db_session, clinic_factory, user_factory, cashbox
 
 def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, cashbox_factory):
     """
-    Scenario: Doctor tries to withdraw more than they have earned.
+    Verifies the solvency check mechanism. Ensures that a payout request is rejected
+    if it exceeds the doctor's current accumulated tip balance.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_overdraft@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_overdraft@test.com")
 
-    # --- FIX: Ensure we have a default cashbox ---
     cashbox = cashbox_factory(clinic)
     cashbox.is_default = True
     db_session.commit()
-    # ---------------------------------------------
 
-    # 1. Give doctor €50
+    # Arrange: Doctor has €50 balance
     payload_in = CreatePaymentRequestSchema(
         doctor_id=doctor.user_id,
         amount=0.0,
@@ -128,7 +124,7 @@ def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, c
     )
     payment_service.create_payment(current_user=manager, session_user=manager, payload=payload_in)
 
-    # 2. Try to withdraw €100 (which exceeds the €50 available balance)
+    # Act: Attempt to withdraw €100 (Overdraft)
     payload_out = CreateTipPayoutRequestSchema(
         amount=100.0
     )
@@ -141,14 +137,59 @@ def test_payout_overdraft_protection(db_session, clinic_factory, user_factory, c
         note=payload_out.note
     )
 
-    # Depending on implementation, it might fail at creation OR require approval then fail.
-    # The service code provided checks balance at creation, so we expect an error immediately.
+    # Assert: Should fail either at creation or approval stage
     if payout and not error:
-        # If it somehow succeeded to create as PENDING, approval must fail
         approved_payout, error = tip_service.approve_payout(approver=manager, payout_id=payout.payout_id)
         assert error is not None
-        assert "exceeds" in error or "balance" in error or "insufficient" in error
+        assert "exceeds" in error or "balance" in error
     else:
-        # Expected path: creation fails
         assert error is not None
         assert "exceeds" in error or "balance" in error
+
+
+def test_reject_tip_payout_restores_nothing(db_session, clinic_factory, user_factory, cashbox_factory):
+    """
+    Scenario: Manager rejects a tip withdrawal request.
+    Expected:
+    1. Status is REJECTED.
+    2. No money leaves the cashbox.
+    3. The Doctor's tip balance is UNAFFECTED (it was never deducted because it was pending).
+    """
+    clinic = clinic_factory(settings={"requires_cash_approval": True})
+    manager = user_factory(clinic, role=UserRole.MANAGER, email="manager_tip_rej@test.com")
+    junior = user_factory(clinic, role=UserRole.RECEPTIONIST, email="junior_tip_req@test.com")
+    doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_tip_rej@test.com")
+
+    cashbox = cashbox_factory(clinic)
+    cashbox.is_default = True
+    db_session.commit()
+
+    # 1. Earn €100 in tips
+    payload_in = CreatePaymentRequestSchema(
+        doctor_id=doctor.user_id, amount=0.0, tip_amount=100.0,
+        cashbox_id=cashbox.cashbox_id, method=PaymentMethod.CASH
+    )
+    payment_service.create_payment(current_user=manager, session_user=manager, payload=payload_in)
+
+    # 2. Junior requests payout (PENDING)
+    payout, _ = tip_service.create_payout(
+        current_user=junior, session_user=junior,
+        doctor_id=doctor.user_id, amount=100.0, note="Can I have cash?"
+    )
+    assert payout.status == TipPayoutStatus.PENDING.value
+
+    # 3. Manager Rejects
+    rejected_payout, error = tip_service.reject_payout(rejector=manager, payout_id=payout.payout_id)
+
+    assert error is None
+    assert rejected_payout.status == TipPayoutStatus.REJECTED.value
+    assert rejected_payout.approved_by == manager.user_id
+
+    # 4. Verify Financial Safety
+    # Cashbox should still have the €100 (No money OUT)
+    db_session.refresh(cashbox)
+    assert float(cashbox.current_amount) == 100.0
+
+    # Doctor should still have €100 balance available (Solvency check)
+    balance = tip_service.get_doctor_tip_balance(clinic.clinic_id, doctor.user_id)
+    assert balance['balance'] == 100.0

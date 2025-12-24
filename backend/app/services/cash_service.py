@@ -18,13 +18,22 @@ from ..schemas.cash import (
 
 
 class CashService:
-    # -------- cashboxes --------
+    """
+    Service for managing Physical Cash Registers (Cashboxes) and their Transactions.
+
+    This service enforces the 'Double-Entry' principle where a Cashbox balance is strictly
+    the sum of its confirmed transactions. It also implements the 'Four-Eyes Principle'
+    (Approval Workflow) for manual transactions created by junior staff.
+    """
 
     def create_cashbox(
             self,
             current_user: User,
             payload: CreateCashboxRequestSchema,
     ):
+        """
+        Creates a new physical cash register (Cashbox) for the clinic.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -41,6 +50,9 @@ class CashService:
             current_user: User,
             include_inactive: bool = False,
     ):
+        """
+        Retrieves all cashboxes assigned to the user's clinic.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return [], "user has no clinic assigned"
@@ -57,6 +69,9 @@ class CashService:
             cashbox_id: int,
             payload: UpdateCashboxRequestSchema,
     ):
+        """
+        Updates metadata for a specific cashbox (name, description, active status).
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -80,6 +95,10 @@ class CashService:
             date_from: datetime | None = None,
             date_to: datetime | None = None,
     ):
+        """
+        Calculates the aggregate financial stats (Total In, Total Out, Net Balance)
+        for a specific cashbox over a given time period.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -97,9 +116,8 @@ class CashService:
 
         return stats, None
 
-    # -------- transactions --------
-
     def _ensure_cashbox_in_clinic(self, clinic_id: int, cashbox_id: int):
+        """Helper to validate that a cashbox belongs to the clinic and is active."""
         cashbox = cashbox_repo.get_in_clinic(cashbox_id, clinic_id)
         if not cashbox:
             return None, "cashbox not found in this clinic"
@@ -112,6 +130,7 @@ class CashService:
             clinic_id: int,
             payload: CreateCashTransactionRequestSchema,
     ):
+        """Helper to ensure referenced entities (Payment, Category) exist in the clinic."""
         if payload.payment_id is not None:
             payment = payment_repo.get_by_id_in_clinic(payload.payment_id, clinic_id)
             if not payment:
@@ -122,7 +141,6 @@ class CashService:
             if not category:
                 return "category not found in this clinic"
 
-        # tip_id / tip_payout_id are assumed already valid if provided
         return None
 
     def create_transaction(
@@ -131,26 +149,33 @@ class CashService:
             session_user: User,
             payload: CreateCashTransactionRequestSchema,
     ):
+        """
+        Creates a new cash transaction (In/Out).
+
+        Logic:
+        1. Checks clinic settings (`requires_cash_approval`).
+        2. Checks user role permissions (`requires_approval_for_actions`).
+        3. If approval is required, the transaction is created as `PENDING`, and the
+           cashbox balance is NOT updated.
+        4. If approval is not required, the transaction is `CONFIRMED`, and the
+           cashbox balance is updated immediately.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id: return None, "user has no clinic assigned"
 
         clinic = clinic_repo.get_by_id(clinic_id)
 
-        # 1. Determine Status
         status = TransactionStatus.CONFIRMED.value
 
-        # Logic: If clinic requires approval AND user is a Junior (requires approval)
         if clinic.requires_cash_approval and current_user.requires_approval_for_actions:
             status = TransactionStatus.PENDING.value
 
-        # 2. Validation
         cashbox, err = self._ensure_cashbox_in_clinic(clinic_id, payload.cashbox_id)
         if err: return None, err
 
         link_error = self._resolve_links_for_transaction(clinic_id, payload)
         if link_error: return None, link_error
 
-        # 3. Create Record
         tx = cash_tx_repo.create_transaction(
             clinic_id=clinic_id,
             cashbox_id=cashbox.cashbox_id,
@@ -161,20 +186,18 @@ class CashService:
             tip_id=payload.tip_id,
             tip_payout_id=payload.tip_payout_id,
             note=payload.note,
-            status=status,  # <--- Set Status
+            status=status,
             occurred_at=payload.occurred_at,
             created_by=current_user.user_id,
             session_user_id=session_user.user_id,
         )
 
-        # 4. Affect Balance (ONLY IF CONFIRMED)
         if status == TransactionStatus.CONFIRMED.value:
             cashbox_repo.adjust_balance_for_transaction(
                 cashbox,
                 payload.type,
                 float(payload.amount),
             )
-            # Increment category usage
             if payload.category_id is not None:
                 category = category_repo.get_by_id_in_clinic(payload.category_id, clinic_id)
                 if category:
@@ -184,13 +207,14 @@ class CashService:
 
     def approve_transaction(self, approver: User, tx_id: int) -> Tuple[Optional[CashTransaction], Optional[str]]:
         """
-        Finalizes a PENDING Manual Transaction (Expense/Deposit).
-        Uses ROW LOCKING to prevent race conditions.
+        Finalizes a PENDING transaction (e.g., an Expense created by a junior).
+
+        This operation uses a database row lock to prevent race conditions.
+        Once confirmed, the Cashbox balance is updated to reflect the movement.
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        # 1. LOCK
         tx = cash_tx_repo.get_with_lock(tx_id, approver.clinic_id)
 
         if not tx:
@@ -199,12 +223,9 @@ class CashService:
         if tx.status != TransactionStatus.PENDING.value:
             return None, "transaction is not pending"
 
-        # 2. Update Status
         tx.status = TransactionStatus.CONFIRMED.value
         tx.approved_by = approver.user_id
 
-        # 3. Affect Balance NOW
-        # We need to fetch the cashbox to adjust it
         cashbox = cashbox_repo.get_in_clinic(tx.cashbox_id, approver.clinic_id)
         if cashbox:
             cashbox_repo.adjust_balance_for_transaction(
@@ -213,7 +234,6 @@ class CashService:
                 float(tx.amount)
             )
 
-        # 4. Update Category Usage
         if tx.category_id:
             category = category_repo.get_by_id_in_clinic(tx.category_id, approver.clinic_id)
             if category:
@@ -223,13 +243,14 @@ class CashService:
 
     def reject_transaction(self, rejector: User, tx_id: int) -> Tuple[Optional[CashTransaction], Optional[str]]:
         """
-        Marks a transaction as REJECTED and records who did it.
-        No money moves (balance remains unchanged).
+        Marks a pending transaction as REJECTED.
+
+        The transaction remains in the database for audit purposes (with the rejector's ID),
+        but the Cashbox balance is never impacted.
         """
         if not rejector.can_approve_financials:
             return None, "permission denied"
 
-        # Lock to ensure consistency
         tx = cash_tx_repo.get_with_lock(tx_id, rejector.clinic_id)
 
         if not tx:
@@ -238,11 +259,7 @@ class CashService:
         if tx.status != TransactionStatus.PENDING.value:
             return None, "transaction is not pending"
 
-        # 1. Update Status
         tx.status = TransactionStatus.REJECTED.value
-
-        # 2. Record the Actor (Reuse the approved_by field)
-        # This provides a permanent audit trail of who rejected the transaction.
         tx.approved_by = rejector.user_id
 
         return tx, None
@@ -263,6 +280,10 @@ class CashService:
             page: int | None,
             page_size: int | None,
     ):
+        """
+        Searches financial transactions with support for filtering by date, type, status,
+        and linked entities (Payment/Category).
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, None, "user has no clinic assigned"
@@ -291,6 +312,13 @@ class CashService:
             counted_total: float,
             note: str | None = None,
     ):
+        """
+        Performs a 'Reconciliation Adjustment'.
+
+        Calculates the difference between the system's theoretical balance and the
+        physical count. If a difference exists, creates an automatic ADJUSTMENT transaction
+        to synchronize the system state with reality.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"

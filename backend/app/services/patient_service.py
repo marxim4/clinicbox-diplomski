@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Tuple, Optional, List
 
 from ..models import User, Patient
@@ -9,13 +10,28 @@ from ..schemas.patients import CreatePatientRequestSchema, UpdatePatientRequestS
 
 
 class PatientService:
+    """
+    Service for managing patient records within a clinical context.
+
+    This service handles the full lifecycle of patient entities, including registration,
+    profile updates, retrieval, and soft-deletion (archiving). It rigorously enforces
+    Multi-Tenancy rules, ensuring that all queries and mutations are strictly scoped
+    to the specific clinic of the authenticated user.
+    """
 
     def create_patient(
             self,
             current_user: User,
             payload: CreatePatientRequestSchema,
     ) -> Tuple[Optional[Patient], Optional[str]]:
+        """
+        Registers a new patient in the current user's clinic.
 
+        Enforces the following integrity constraints:
+        1. Tenant Scope: The patient is associated strictly with the creator's clinic.
+        2. Doctor Association: Validates that the assigned doctor exists and belongs to the same clinic.
+        3. Uniqueness: Prevents duplicate email addresses within the specific clinic scope.
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
@@ -25,13 +41,12 @@ class PatientService:
         if not doctor:
             return None, "doctor not found in this clinic"
 
+        email_str = None
         if payload.email is not None:
             email_str = str(payload.email)
             existing = patient_repo.get_by_email_in_clinic(email_str, clinic_id)
             if existing:
                 return None, "email already in use for another patient in this clinic"
-        else:
-            email_str = None
 
         patient = patient_repo.create_patient(
             clinic_id=clinic_id,
@@ -47,7 +62,15 @@ class PatientService:
 
         return patient, None
 
-    def archive_patient(self, current_user, patient_id):
+    def archive_patient(self, current_user: User, patient_id: int) -> Tuple[bool, Optional[str]]:
+        """
+        Performs a 'Soft Delete' on a patient record.
+
+        Instead of removing the data physically (which would violate referential integrity
+        with financial records), the patient is marked as inactive. This preserves
+        historical data while preventing the patient from being selected for new
+        operations.
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return False, "user has no clinic assigned"
@@ -59,9 +82,8 @@ class PatientService:
         patient.is_active = False
         return True, None
 
-    # -------------------------------------------------------------------
-
     def list_patients_for_clinic(self, clinic_id: int, include_inactive: bool = False):
+        """Retrieves a flat list of all patients associated with a specific clinic."""
         return patient_repo.list_for_clinic(clinic_id, include_inactive=include_inactive)
 
     def list_patients_for_clinic_paginated(
@@ -71,6 +93,7 @@ class PatientService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """Retrieves a paginated list of patients for UI display."""
         return patient_repo.list_for_clinic_paginated(
             clinic_id,
             page=page,
@@ -78,16 +101,16 @@ class PatientService:
             include_inactive=include_inactive
         )
 
-    # -------------------------------------------------------------------
-
     def get_patient_for_clinic(
             self,
             clinic_id: int,
             patient_id: int,
     ) -> Optional[Patient]:
+        """
+        Retrieves a specific patient by ID, strictly enforcing clinic boundaries.
+        Returns None if the patient exists but belongs to a different clinic.
+        """
         return patient_repo.get_by_id_in_clinic(patient_id, clinic_id)
-
-    # -------------------------------------------------------------------
 
     def update_patient(
             self,
@@ -95,7 +118,13 @@ class PatientService:
             patient_id: int,
             payload: UpdatePatientRequestSchema,
     ) -> Tuple[Optional[Patient], Optional[str]]:
+        """
+        Updates an existing patient's details.
 
+        Includes logic to ensure that if the email is changed, the new email does
+        not conflict with another existing patient in the same clinic (excluding the
+        current record).
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
@@ -104,7 +133,6 @@ class PatientService:
         if not patient:
             return None, "patient not found"
 
-        # Email change
         if payload.email is not None:
             email_str = str(payload.email)
             existing = patient_repo.get_by_email_in_clinic(email_str, clinic_id)
@@ -112,7 +140,6 @@ class PatientService:
                 return None, "email already in use for another patient in this clinic"
             patient.email = email_str
 
-        # First/Last/Middle name, dob
         if payload.first_name is not None:
             patient.first_name = payload.first_name
         if payload.last_name is not None:
@@ -122,13 +149,11 @@ class PatientService:
         if payload.birth_date is not None:
             patient.birth_date = payload.birth_date
 
-        # Other fields
         if payload.phone is not None:
             patient.phone = payload.phone
         if payload.note is not None:
             patient.note = payload.note
 
-        # Doctor change
         if payload.doctor_id is not None:
             doctor = user_repo.get_by_id_in_clinic(payload.doctor_id, clinic_id)
             if not doctor:
@@ -140,9 +165,8 @@ class PatientService:
 
         return patient, None
 
-    # -------------------------------------------------------------------
-
     def list_patients_for_doctor(self, clinic_id: int, doctor_id: int):
+        """Retrieves all patients assigned to a specific doctor."""
         return patient_repo.list_for_doctor(clinic_id, doctor_id)
 
     def list_patients_for_doctor_paginated(
@@ -152,6 +176,7 @@ class PatientService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """Retrieves a paginated list of patients for a specific doctor."""
         return patient_repo.list_for_doctor_paginated(
             clinic_id,
             doctor_id,
@@ -166,6 +191,10 @@ class PatientService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """
+        Verifies the doctor exists within the clinic before retrieving their patients.
+        Returns a tuple suitable for API response handling.
+        """
         doctor = user_repo.get_by_id_in_clinic(doctor_id, clinic_id)
         if not doctor:
             return None, None, "doctor not found in this clinic"
@@ -178,8 +207,6 @@ class PatientService:
             clinic_id, doctor_id, page, page_size
         )
         return items, meta, None
-
-    # -------------------------------------------------------------------
 
     def search_patients_for_clinic(
             self,
@@ -197,6 +224,12 @@ class PatientService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """
+        Performs a multi-criteria search on the patient registry.
+
+        Supports both fuzzy text search (via the 'q' parameter) and specific field filtering.
+        Results can be returned as a flat list or paginated depending on the arguments provided.
+        """
         if email:
             email = email.strip().lower()
 

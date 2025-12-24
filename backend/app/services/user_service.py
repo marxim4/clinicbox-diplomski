@@ -15,11 +15,27 @@ from ..schemas.users import (
 
 
 class UserService:
+    """
+    Service for identity management and access control administration.
+
+    This service handles the lifecycle of user accounts within a clinic.
+    It implements Role-Based Access Control (RBAC) enforcement at the administrative level,
+    allowing Owners to manage staff credentials while enforcing 'Anti-Lockout' rules
+    to prevent self-sabotage (e.g., an owner cannot deactivate their own account).
+    """
+
     def create_clinic_user(
             self,
             owner: User,
             payload: CreateUserRequestSchema,
-    ):
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Provision a new staff account under the owner's clinic.
+
+        Enforces Multi-Tenancy by ensuring the new user is strictly bound to the
+        owner's `clinic_id`. Also enforces a 'Safe Defaults' policy where new users
+        default to requiring approval for sensitive actions until trusted.
+        """
         if not owner.clinic_id:
             return None, "owner has no clinic assigned"
 
@@ -29,6 +45,7 @@ class UserService:
         if existing:
             return None, "email already in use for this clinic"
 
+        # Security by Design: New users default to requiring supervision.
         requires_approval = True
 
         user = user_repo.create_user(
@@ -44,6 +61,7 @@ class UserService:
         return user, None
 
     def list_users_for_clinic(self, clinic_id: int):
+        """Retrieves all staff members associated with a clinic."""
         return user_repo.list_for_clinic(clinic_id)
 
     def list_users_for_clinic_paginated(
@@ -52,13 +70,20 @@ class UserService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """Retrieves a paginated list of staff members for administrative UI."""
         return user_repo.list_for_clinic_paginated(clinic_id, page, page_size)
 
     def change_own_pin(
             self,
             user: User,
             payload: ChangePinRequestSchema,
-    ):
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Allows a user to rotate their own 4-digit PIN.
+
+        Requires proof of current possession (must supply current PIN) before
+        allowing the change, preventing unauthorized overrides if a session is left open.
+        """
         if user.pin_hash:
             if not payload.current_pin:
                 return None, "current_pin is required"
@@ -73,7 +98,14 @@ class UserService:
             owner: User,
             target_user_id: int,
             payload: SetUserStatusRequestSchema,
-    ):
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Activates or Deactivates a staff account.
+
+        Includes an 'Anti-Lockout' guard clause preventing the Owner from
+        deactivating their own account, ensuring the clinic always has at least
+        one active administrator.
+        """
         if not owner.clinic_id:
             return None, "owner has no clinic assigned"
 
@@ -92,7 +124,13 @@ class UserService:
             owner: User,
             target_user_id: int,
             payload: UpdateUserRequestSchema,
-    ):
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Administrative override for updating staff details.
+
+        Allows the Owner to modify roles, permissions, and reset PINs for their staff.
+        Includes guard clauses to prevent self-demotion (Owner cannot change their own role).
+        """
         if not owner.clinic_id:
             return None, "owner has no clinic assigned"
 
@@ -100,6 +138,7 @@ class UserService:
         if not target:
             return None, "user not found"
 
+        # Anti-Lockout: Prevent self-demotion
         if target.user_id == owner.user_id and payload.role is not None:
             return None, "owner cannot change their own role"
 
@@ -129,7 +168,10 @@ class UserService:
             self,
             user: User,
             payload: UpdateMeRequestSchema,
-    ):
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Allows a user to self-service update their basic profile information.
+        """
         if payload.email is not None:
             existing = user_repo.get_by_email_in_clinic(str(payload.email), user.clinic_id)
             if existing and existing.user_id != user.user_id:
@@ -146,7 +188,13 @@ class UserService:
             clinic_id: int,
             target_user_id: int,
             payload: VerifyPinRequestSchema,
-    ):
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Verifies a user's PIN without requiring a full session login.
+
+        Used for high-speed workflows (like 'Quick Switch' or 'Manager Override')
+        where a user steps in to authorize an action on a shared terminal.
+        """
         target = user_repo.get_by_id_in_clinic(target_user_id, clinic_id)
         if not target:
             return False, "user not found"

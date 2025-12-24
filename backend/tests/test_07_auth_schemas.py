@@ -3,9 +3,8 @@ from pydantic import ValidationError
 from app.schemas.auth import RegisterOwnerSchema, LoginSchema, ChangePasswordSchema
 from app.enums import UserRole
 
-# --- 1. Password Regex Testing ---
-
-# Rule: At least 8 chars, 1 Upper, 1 Digit, 1 Special
+# Define Password Complexity Rules for Testing
+# Policy: Minimum 8 characters, requiring Uppercase, Digit, and Special Character.
 VALID_PASSWORDS = [
     "StrongP@ss1",
     "Another#1",
@@ -15,26 +14,24 @@ VALID_PASSWORDS = [
 ]
 
 INVALID_PASSWORDS = [
-    ("short1!", "too short"),  # < 8 chars
-    ("nodigits!", "missing digit"),  # No digit
-    ("NoSpecial1", "missing special"),  # No special char
-    ("alllowercase1!", "missing upper"),  # No uppercase
-    ("ALLUPPER1!", "missing lower"),
-    # No lowercase (Actually your regex requires Upper, Digit, Special. It usually implies lower but strict regex might allow ALL CAPS if it has special+digit. Your regex `(?=.*[A-Z])` checks upper. It doesn't strictly check for lower, but let's test what fails.)
+    ("short1!", "too short"),
+    ("nodigits!", "missing digit"),
+    ("NoSpecial1", "missing special character"),
+    ("alllowercase1!", "missing uppercase"),
     ("12345678", "only digits"),
 ]
 
 
 @pytest.mark.parametrize("password", VALID_PASSWORDS)
 def test_password_regex_valid(password):
-    """Ensure valid passwords pass validation."""
-    # We construct a partial schema to test just the password field logic
-    # or instantiate the full schema with dummy data.
+    """
+    Verifies that passwords meeting the complexity policy pass validation.
+    """
     schema = RegisterOwnerSchema(
         owner_name="Test",
         email="test@test.com",
         password=password,
-        confirm_password=password,  # Must match to pass that check too
+        confirm_password=password,
         owner_role=UserRole.OWNER,
         clinic_name="Clinic"
     )
@@ -43,7 +40,9 @@ def test_password_regex_valid(password):
 
 @pytest.mark.parametrize("password, reason", INVALID_PASSWORDS)
 def test_password_regex_invalid(password, reason):
-    """Ensure weak passwords fail validation."""
+    """
+    Verifies that weak passwords are rejected with specific error messages.
+    """
     with pytest.raises(ValidationError) as exc:
         RegisterOwnerSchema(
             owner_name="Test",
@@ -53,14 +52,15 @@ def test_password_regex_invalid(password, reason):
             owner_role=UserRole.OWNER,
             clinic_name="Clinic"
         )
-    # Check that the error message relates to password complexity
+
+    # Assert validation error relates to password constraints
     assert "Password must be at least 8 characters" in str(exc.value)
 
 
-# --- 2. Matching Passwords Logic ---
-
 def test_register_password_mismatch():
-    """Fail if password and confirm_password do not match."""
+    """
+    Verifies integrity check: Registration fails if 'password' and 'confirm_password' diverge.
+    """
     with pytest.raises(ValidationError) as exc:
         RegisterOwnerSchema(
             owner_name="Test",
@@ -74,7 +74,9 @@ def test_register_password_mismatch():
 
 
 def test_change_password_mismatch():
-    """Fail if new_password and confirm_new_password do not match."""
+    """
+    Verifies integrity check: Password change fails if confirmation field does not match.
+    """
     with pytest.raises(ValidationError) as exc:
         ChangePasswordSchema(
             current_password="OldPassword1!",
@@ -84,10 +86,10 @@ def test_change_password_mismatch():
     assert "New passwords do not match" in str(exc.value)
 
 
-# --- 3. Field Trimming & Normalization ---
-
 def test_email_normalization():
-    """Email should be lowercased and trimmed."""
+    """
+    Verifies data sanitization: Emails should be trimmed and lowercased automatically.
+    """
     schema = LoginSchema(
         email="  Test@Test.COM  ",
         password="Password1!"
@@ -96,10 +98,13 @@ def test_email_normalization():
 
 
 def test_empty_strings_rejected():
-    """Name and Clinic Name cannot be empty strings or just whitespace."""
+    """
+    Verifies that required string fields cannot contain only whitespace.
+    """
+    # Case 1: Empty Name
     with pytest.raises(ValidationError):
         RegisterOwnerSchema(
-            owner_name="   ",  # Empty after strip
+            owner_name="   ",
             email="test@test.com",
             password="Valid1@Password",
             confirm_password="Valid1@Password",
@@ -107,6 +112,7 @@ def test_empty_strings_rejected():
             clinic_name="Clinic"
         )
 
+    # Case 2: Empty Clinic Name
     with pytest.raises(ValidationError):
         RegisterOwnerSchema(
             owner_name="Valid Name",
@@ -114,5 +120,5 @@ def test_empty_strings_rejected():
             password="Valid1@Password",
             confirm_password="Valid1@Password",
             owner_role=UserRole.OWNER,
-            clinic_name="   "  # Empty clinic name
+            clinic_name="   "
         )

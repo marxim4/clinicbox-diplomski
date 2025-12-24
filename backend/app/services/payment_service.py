@@ -26,12 +26,28 @@ from ..schemas.payments import CreatePaymentRequestSchema
 
 
 class PaymentService:
+    """
+    Service for managing the lifecycle of financial payments.
+
+    This service orchestrates the complex logic of accepting funds, which involves:
+    1. Debt Reduction: Applying payments to specific installments using a 'Waterfall' algorithm.
+    2. Tip Distribution: Separating gratuities from principal debt.
+    3. Cash Management: Interfacing with the Cashbox to record physical money movement.
+    4. Concurrency Control: Preventing race conditions when multiple staff members access
+       the same patient account simultaneously.
+    5. Approval Workflows: Enforcing managerial oversight for high-value or sensitive transactions.
+    """
+
     def _get_plan_and_start_installment(
             self,
             clinic_id: int,
             plan_id: int | None,
             installment_id: int | None,
     ) -> Tuple[Optional[InstallmentPlan], Optional[Installment], Optional[str]]:
+        """
+        Resolves the target InstallmentPlan and specific starting Installment based on input IDs.
+        Ensures all entities belong to the correct clinic context.
+        """
         plan: Optional[InstallmentPlan] = None
         start_installment: Optional[Installment] = None
 
@@ -59,7 +75,8 @@ class PaymentService:
 
         return plan, start_installment, None
 
-    def _total_plan_remaining(self, plan: InstallmentPlan):
+    def _total_plan_remaining(self, plan: InstallmentPlan) -> float:
+        """Calculates the total outstanding debt for a plan."""
         total = 0.0
         for inst in plan.installments:
             expected = float(inst.expected_amount)
@@ -69,6 +86,10 @@ class PaymentService:
         return total
 
     def _recalc_plan_status(self, plan: InstallmentPlan):
+        """
+        Updates the overall status of an InstallmentPlan based on its constituent installments.
+        Transitions state between PLANNED, PARTIALLY_PAID, PAID, and OVERDUE.
+        """
         installments = list(plan.installments)
         if not installments:
             plan.status = PlanStatus.PLANNED
@@ -113,8 +134,8 @@ class PaymentService:
             created_by: int,
     ):
         """
-        Creates a Tip record.
-        Note: The actual money movement (CashTransaction) is handled separately in _handle_cash_transaction.
+        Records the gratuity portion of a payment.
+        Note: The physical money movement is handled separately via _handle_cash_transaction.
         """
         if amount <= 0:
             return
@@ -138,8 +159,10 @@ class PaymentService:
             total_cash: float,
     ) -> Optional[str]:
         """
-        MOVES MONEY into the cashbox.
-        CRITICAL: Only call this when payment status is PAID.
+        Executes the 'Double-Entry' bookkeeping logic.
+
+        If the payment method is CASH, this creates a corresponding 'IN' transaction
+        on the physical Cashbox and updates its current balance.
         """
         if payment.method != PaymentMethod.CASH or total_cash <= 0:
             return None
@@ -151,7 +174,7 @@ class PaymentService:
         else:
             cashbox = cashbox_repo.get_default_for_clinic(clinic_id)
             if not cashbox:
-                # no cashbox configured – silently skip
+                # No cashbox configured – fail silently or log warning (business decision)
                 return None
 
         cash_tx_repo.create_transaction(
@@ -185,7 +208,13 @@ class PaymentService:
             amount_to_apply: float
     ):
         """
-        Distributes the payment amount across the plan's installments.
+        Implements the 'Waterfall' Payment Algorithm.
+
+        Money is applied to installments sequentially:
+        1. Starts at the specific 'start_inst' (if provided) or the first installment.
+        2. Fills the current installment until fully paid.
+        3. Spills over any remaining amount to the next installment in the sequence.
+        4. Continues until the payment amount is exhausted or the plan is fully paid.
         """
         remaining_to_apply = amount_to_apply
 
@@ -224,9 +253,27 @@ class PaymentService:
             session_user: User,
             payload: CreatePaymentRequestSchema,
     ):
+        """
+        Initiates a payment transaction.
+
+        This complex workflow handles two primary scenarios:
+        1. Pure Tip: A gratuity with no underlying debt.
+        2. Debt Payment: Paying off an installment plan (with optional overpayment as tip).
+
+        Concurrency Safety:
+        When paying off debt, this method employs Database Row Locking (`get_with_lock`)
+        on the Patient record. This ensures that if two receptionists try to pay for the
+        same patient simultaneously, one transaction waits for the other, preventing
+        financial inconsistencies (e.g., double-paying a debt).
+
+        Status Logic:
+        Based on clinic settings (`requires_payment_approval`), the payment is created
+        as either PAID (immediate effect) or PENDING (delayed effect pending manager approval).
+        """
         if not current_user.clinic_id:
             return None, "user has no clinic assigned"
 
+        # Guard: Prevent payments if the daily books are already closed
         if payload.cashbox_id:
             if daily_close_service.is_today_closed(payload.cashbox_id, current_user.clinic_id):
                 return None, "Day is closed. No new payments allowed."
@@ -234,32 +281,27 @@ class PaymentService:
         clinic_id = current_user.clinic_id
         clinic = clinic_repo.get_by_id(clinic_id)
 
-        # --- 1. Determine Status ---
+        # Determine Status (Pending vs Paid)
         status = PaymentStatus.PAID.value
-        # If the clinic requires approval AND the current user isn't an Approver (Manager/Owner)
-        # Then we mark it PENDING.
         if clinic.requires_payment_approval and current_user.requires_approval_for_actions:
             status = PaymentStatus.PENDING.value
-        # ---------------------------
 
         base_amount = float(payload.amount) if payload.amount is not None else 0.0
         manual_tip = float(payload.tip_amount or 0.0)
 
-        # Capture the intended cashbox ID from the request
+        # Resolve Cashbox
         target_box_id = payload.cashbox_id
-
         if target_box_id is not None:
             box = cashbox_repo.get_in_clinic(target_box_id, clinic_id)
             if not box:
                 return None, "cashbox not found in this clinic"
         else:
-            # Fallback to Default
             box = cashbox_repo.get_default_for_clinic(clinic_id)
             if not box:
                 return None, "no default cashbox configured for clinic"
             target_box_id = box.cashbox_id
 
-        # --- Case A: Pure Tip (No Debt) ---
+        # --- Scenario A: Pure Tip (No Debt) ---
         if base_amount <= 0 and manual_tip > 0:
             doctor_id: int
             patient_id: int | None = None
@@ -280,7 +322,6 @@ class PaymentService:
                         or PaymentMethod.CASH
                 )
             elif payload.doctor_id is not None:
-                # Pure tip to a doctor (no plan)
                 doctor = user_repo.get_by_id_in_clinic(payload.doctor_id, clinic_id)
                 if not doctor:
                     return None, "doctor not found in this clinic"
@@ -300,13 +341,13 @@ class PaymentService:
                 amount=0.0,
                 tip_amount=manual_tip,
                 method=method,
-                target_cashbox_id=target_box_id,  # <--- Saved here
+                target_cashbox_id=target_box_id,
                 status=status,
                 created_by=current_user.user_id,
                 session_user_id=session_user.user_id,
             )
 
-            # Only execute effects (Tips/Cashbox) if PAID immediately
+            # Apply effects only if immediately PAID
             if status == PaymentStatus.PAID.value:
                 self._create_tip_from_payment(
                     clinic_id=clinic_id,
@@ -322,7 +363,7 @@ class PaymentService:
                     user_id=current_user.user_id,
                     session_user_id=session_user.user_id,
                     payment=payment,
-                    cashbox_id=target_box_id,  # <--- Used immediately
+                    cashbox_id=target_box_id,
                     total_cash=manual_tip,
                 )
                 if err:
@@ -330,7 +371,7 @@ class PaymentService:
 
             return payment, None
 
-        # --- Case B: Debt Payment (+ maybe tip) ---
+        # --- Scenario B: Debt Payment ---
         if base_amount <= 0:
             return None, "amount must be positive for debt payment"
 
@@ -349,26 +390,19 @@ class PaymentService:
                 or PaymentMethod.CASH
         )
 
-        # --- LOCKING IMPLEMENTED HERE ---
-        # Instead of get_by_id_in_clinic, we use get_with_lock.
-        # This prevents race conditions if two receptionists pay for this patient simultaneously.
+        # LOCKING: Prevent concurrent updates to the same patient's debt
         patient = None
         if plan.patient_id:
             patient = patient_repo.get_with_lock(plan.patient_id, clinic_id)
             if not patient:
                 return None, "patient not found"
-        # --------------------------------
 
         total_remaining_before = self._total_plan_remaining(plan)
-
-        # Optional strictness check if plan is already paid
-        if total_remaining_before <= 0 and base_amount > 0:
-            pass
 
         remaining_to_apply = min(base_amount, total_remaining_before)
         debt_applied = remaining_to_apply
 
-        # Overpay beyond current plan remaining becomes extra tip
+        # Calculate "Overpayment" as Tip
         overpay_tip = max(0.0, base_amount - debt_applied)
         total_tip = manual_tip + overpay_tip
 
@@ -377,26 +411,24 @@ class PaymentService:
             patient_id=patient.patient_id if patient else None,
             doctor_id=plan.doctor_id,
             plan_id=plan.plan_id,
-            installment_id=start_installment.installment_id
-            if start_installment is not None
-            else None,
+            installment_id=start_installment.installment_id if start_installment else None,
             amount=debt_applied,
             tip_amount=total_tip,
             method=method,
-            target_cashbox_id=target_box_id,  # <--- Saved here
+            target_cashbox_id=target_box_id,
             status=status,
             created_by=current_user.user_id,
             session_user_id=session_user.user_id,
         )
 
-        # Only execute effects (Installment updates, Tips, Cashbox) if PAID immediately
+        # Apply effects only if immediately PAID
         if status == PaymentStatus.PAID.value:
-            # 1. Update Installments
+            # 1. Update Debt (Installments)
             self._apply_payment_to_installments(plan, start_installment, debt_applied)
 
             db.session.commit()
 
-            # 2. Create Tip for total_tip (if any)
+            # 2. Record Tip
             self._create_tip_from_payment(
                 clinic_id=clinic_id,
                 doctor_id=plan.doctor_id,
@@ -413,7 +445,7 @@ class PaymentService:
                 user_id=current_user.user_id,
                 session_user_id=session_user.user_id,
                 payment=payment,
-                cashbox_id=target_box_id,  # <--- Used immediately
+                cashbox_id=target_box_id,
                 total_cash=total_cash,
             )
             if err:
@@ -424,12 +456,15 @@ class PaymentService:
     def approve_payment(self, approver: User, payment_id: int):
         """
         Finalizes a PENDING payment.
-        Uses ROW LOCKING to prevent race conditions (double approval).
+
+        This method executes the financial logic that was deferred during creation.
+        It strictly requires a lock on the Payment record to ensure that a payment
+        is not approved twice (preventing double-counting of revenue).
         """
         if not approver.can_approve_financials:
             return None, "permission denied"
 
-        # 1. Fetch with LOCK (Prevents race conditions)
+        # Lock the row to ensure atomicity
         payment = payment_repo.get_with_lock(payment_id, approver.clinic_id)
 
         if not payment:
@@ -438,23 +473,21 @@ class PaymentService:
         if payment.status != PaymentStatus.PENDING.value:
             return None, "payment is not pending"
 
-        # 2. Update Status
+        # 1. Update Status
         payment.status = PaymentStatus.PAID.value
         payment.approved_by = approver.user_id
 
-        # 3. Apply Debt Logic (Effect on Installments)
-        # We must re-fetch the plan context to apply the math now that it is approved.
+        # 2. Apply Debt Logic (Deferred execution)
         if payment.plan_id and payment.amount > 0:
             plan = installment_plan_repo.get_plan_in_clinic(payment.plan_id, approver.clinic_id)
             start_inst = None
             if payment.installment_id:
                 start_inst = installment_plan_repo.get_installment_in_clinic(payment.installment_id, approver.clinic_id)
 
-            # Apply the money to the debt
             if plan:
                 self._apply_payment_to_installments(plan, start_inst, float(payment.amount))
 
-        # 4. Apply Tip Logic
+        # 3. Apply Tip Logic
         if payment.tip_amount > 0:
             self._create_tip_from_payment(
                 clinic_id=payment.clinic_id,
@@ -462,18 +495,18 @@ class PaymentService:
                 amount=float(payment.tip_amount),
                 patient_id=payment.patient_id,
                 plan_id=payment.plan_id,
-                created_by=payment.created_by,  # Original creator gets credit
+                created_by=payment.created_by,
             )
 
-        # 5. Move Money (Cashbox Transaction)
+        # 4. Move Money (Deferred execution)
         total_cash = float(payment.amount) + float(payment.tip_amount)
 
         err = self._handle_cash_transaction(
             clinic_id=payment.clinic_id,
-            user_id=approver.user_id,  # Approver causes the money move
-            session_user_id=payment.session_user_id,  # Keep history of who was physically there
+            user_id=approver.user_id,
+            session_user_id=payment.session_user_id,
             payment=payment,
-            cashbox_id=payment.target_cashbox_id,  # Use the ID saved during creation
+            cashbox_id=payment.target_cashbox_id,
             total_cash=total_cash,
         )
         if err:
@@ -483,7 +516,10 @@ class PaymentService:
 
     def reject_payment(self, rejector: User, payment_id: int):
         """
-        Marks a payment as REJECTED and records who did it.
+        Marks a pending payment as REJECTED.
+
+        The record is preserved for audit purposes, but no financial effects
+        (debt reduction or cash movement) are applied.
         """
         if not rejector.can_approve_financials:
             return None, "permission denied"
@@ -496,11 +532,10 @@ class PaymentService:
         if payment.status != PaymentStatus.PENDING.value:
             return None, "payment is not pending"
 
-        # 1. Update Status (The WHAT)
+        # Update Status
         payment.status = PaymentStatus.REJECTED.value
 
-        # 2. Record the Actor (The WHO)
-        # We reuse this field. If status is REJECTED, this ID is the Rejector.
+        # Record the Actor
         payment.approved_by = rejector.user_id
 
         return payment, None
@@ -511,6 +546,7 @@ class PaymentService:
             current_user: User,
             payment_id: int,
     ):
+        """Retrieves a single payment record within the user's clinic scope."""
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, "user has no clinic assigned"
@@ -529,6 +565,7 @@ class PaymentService:
             page: int | None,
             page_size: int | None,
     ):
+        """Retrieves payment history for a specific installment plan."""
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, None, "user has no clinic assigned"
@@ -549,6 +586,7 @@ class PaymentService:
             page: int | None,
             page_size: int | None,
     ):
+        """Retrieves payment history for a specific installment."""
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, None, "user has no clinic assigned"
@@ -576,7 +614,12 @@ class PaymentService:
             page: int | None = None,
             page_size: int | None = None,
     ):
+        """
+        Advanced search for payments.
 
+        Supports filtering by date range, amount range, payment method,
+        and associated entities (Doctor, Patient).
+        """
         clinic_id = current_user.clinic_id
         if not clinic_id:
             return None, None, "user has no clinic assigned"

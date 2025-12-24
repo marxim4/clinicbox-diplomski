@@ -8,7 +8,7 @@ from app.models import CashTransaction
 
 def test_pin_verification_logic(db_session, clinic_factory, user_factory):
     """
-    Scenario: Verify the User model can correctly set and check PINs.
+    Verifies the security of the PIN hashing mechanism using standard cryptographic libraries.
     """
     clinic = clinic_factory()
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doc_pin@test.com")
@@ -28,18 +28,17 @@ def test_pin_verification_logic(db_session, clinic_factory, user_factory):
 def test_shared_terminal_attribution(db_session, clinic_factory, user_factory, cashbox_factory, patient_factory,
                                      plan_factory):
     """
-    Scenario:
-      - Receptionist is logged in (Session User).
-      - Doctor comes over and pays via PIN (Acting User).
+    Verifies the audit trail fidelity in a Shared Terminal environment.
+    Ensures that transactions correctly distinguish between:
+    - Session User: The receptionist logged into the device.
+    - Acting User: The doctor authorizing the specific action via PIN.
     """
     clinic = clinic_factory()
 
-    # --- FIX START: Ensure payments are instant (PAID) so transactions get created ---
+    # Arrange: Allow instant payments to generate immediate transaction records
     clinic.requires_payment_approval = False
     db_session.commit()
-    # --- FIX END ---
 
-    # 1. The Users
     receptionist = user_factory(clinic, role=UserRole.RECEPTIONIST, email="reception@test.com")
     doctor = user_factory(clinic, role=UserRole.DOCTOR, email="doctor_pin@test.com")
 
@@ -47,7 +46,7 @@ def test_shared_terminal_attribution(db_session, clinic_factory, user_factory, c
     patient = patient_factory(clinic, doctor)
     plan = plan_factory(clinic, patient, doctor, total_amount=100.0)
 
-    # 2. The Logic
+    # Act: Receptionist is logged in, but Doctor authorizes the payment
     payload = CreatePaymentRequestSchema(
         amount=100.0,
         plan_id=plan.plan_id,
@@ -56,22 +55,19 @@ def test_shared_terminal_attribution(db_session, clinic_factory, user_factory, c
     )
 
     payment, error = payment_service.create_payment(
-        current_user=doctor,
-        session_user=receptionist,
+        current_user=doctor,  # Acting User (PIN verified)
+        session_user=receptionist,  # Session User (Logged in)
         payload=payload
     )
 
     assert error is None
 
-    # 3. Verification
+    # Assert 1: Payment Record Attribution
     assert payment.created_by == doctor.user_id
     assert payment.session_user_id == receptionist.user_id
 
-    # Query Transaction directly
+    # Assert 2: Financial Transaction Attribution
     tx = db_session.query(CashTransaction).filter_by(payment_id=payment.payment_id).first()
-
-    # This assertion failed before because payment was PENDING (no tx created)
-    # Now that it is PAID, this should pass.
     assert tx is not None
     assert tx.created_by == doctor.user_id
     assert tx.session_user_id == receptionist.user_id

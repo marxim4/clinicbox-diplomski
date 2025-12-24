@@ -1,16 +1,18 @@
 import pytest
 from datetime import date, timedelta
 from app.enums import UserRole, PaymentMethod
-from app.services.payment_service import payment_service
 from app.services.daily_close_service import daily_close_service
 from app.schemas.payments import CreatePaymentRequestSchema
-from app.schemas.daily_close import CreateDailyCloseRequestSchema  # <--- FIXED NAME
+from app.schemas.daily_close import CreateDailyCloseRequestSchema
 
 
 def test_prevent_negative_payment_amount(db_session, clinic_factory, user_factory, patient_factory, plan_factory,
                                          cashbox_factory):
     """
-    Edge Case: User enters a negative amount (e.g. -50) to exploit the math logic.
+    Verifies Input Sanitization.
+
+    Ensures that the application layer (Pydantic) rejects negative financial values
+    before they reach business logic, preventing arithmetic exploits.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER)
@@ -18,23 +20,25 @@ def test_prevent_negative_payment_amount(db_session, clinic_factory, user_factor
     plan = plan_factory(clinic, patient, manager, total_amount=100.0)
     cashbox = cashbox_factory(clinic)
 
-    # We expect Pydantic validation to fail before it even reaches the service logic
+    # Act & Assert: Schema Validation should fail
     try:
         CreatePaymentRequestSchema(
             plan_id=plan.plan_id,
-            amount=-50.0,  # <--- ATTACK
+            amount=-50.0,  # Invalid Input
             cashbox_id=cashbox.cashbox_id,
             method=PaymentMethod.CASH
         )
         pytest.fail("Schema validation failed to block negative amount!")
     except ValueError:
-        # Pass: Pydantic correctly raised a validation error
         pass
 
 
 def test_prevent_future_daily_close(db_session, clinic_factory, user_factory, cashbox_factory):
     """
-    Edge Case: Closing the register for a future date (e.g. tomorrow).
+    Verifies Temporal Consistency.
+
+    Prevents 'Time-Travel' errors where a user attempts to close the register
+    for a future date, which would corrupt financial reporting timelines.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER)
@@ -46,8 +50,8 @@ def test_prevent_future_daily_close(db_session, clinic_factory, user_factory, ca
 
     payload = CreateDailyCloseRequestSchema(
         cashbox_id=cashbox.cashbox_id,
-        counted_total=100.0,  # <--- FIXED FIELD NAME
-        date=tomorrow  # <--- ATTACK
+        counted_total=100.0,
+        date=tomorrow
     )
 
     close, error = daily_close_service.create_daily_close(
@@ -63,7 +67,10 @@ def test_prevent_future_daily_close(db_session, clinic_factory, user_factory, ca
 
 def test_prevent_duplicate_daily_close(db_session, clinic_factory, user_factory, cashbox_factory):
     """
-    Edge Case: Trying to close the same register twice for the same day.
+    Verifies Idempotency/State Consistency.
+
+    Ensures that a cash register cannot be closed twice for the same date,
+    preventing duplicate financial entries in the aggregate reports.
     """
     clinic = clinic_factory()
     manager = user_factory(clinic, role=UserRole.MANAGER)
@@ -79,12 +86,9 @@ def test_prevent_duplicate_daily_close(db_session, clinic_factory, user_factory,
         counted_total=0.0,
         date=today
     )
-    # Ensure no existing close blocks us
-    # (In a real test env, we start fresh, so this is fine)
-
     daily_close_service.create_daily_close(manager, manager, payload)
 
-    # 2. Second Close -> Should Fail
+    # 2. Second Close -> Failure
     dup_close, error = daily_close_service.create_daily_close(manager, manager, payload)
 
     assert dup_close is None
