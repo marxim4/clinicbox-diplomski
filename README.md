@@ -35,8 +35,8 @@ backend/
 ### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
-cd clinicBox
+git clone https://github.com/marxim4/clinicbox-diplomski.git
+cd clinicbox-diplomski
 ````
 
 ### 2. Start PostgreSQL with Docker
