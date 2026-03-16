@@ -28,6 +28,52 @@ def _serialize_tx(tx):
 @use_schema(CreateCashTransactionRequestSchema)
 @require_pin
 def create_cash_transaction(data: CreateCashTransactionRequestSchema):
+    """
+    Create Cash Transaction
+    ---
+    tags:
+      - Cash Transactions
+    security:
+      - Bearer: []
+    summary: Record a manual deposit (IN) or withdrawal (OUT).
+    description: Used for general expenses (office supplies) or injections (start of day). Requires PIN if acting user differs from session user.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - cashbox_id
+            - type
+            - amount
+          properties:
+            cashbox_id:
+              type: integer
+            type:
+              type: string
+              enum: ["IN", "OUT"]
+            amount:
+              type: number
+              format: float
+              example: 50.0
+            category_id:
+              type: integer
+              description: Optional category for expenses
+            note:
+              type: string
+              example: "Office supplies"
+            pin:
+              type: string
+              description: 4-digit PIN for authorization
+    responses:
+      201:
+        description: Transaction created successfully
+      400:
+        description: Invalid data or insufficient funds (for OUT)
+      404:
+        description: Cashbox not found
+    """
     acting_user = g.current_user
     session_user = getattr(g, "session_user", acting_user)
 
@@ -53,6 +99,30 @@ def create_cash_transaction(data: CreateCashTransactionRequestSchema):
 @bp.post("/<int:tx_id>/approve")
 @login_required
 def approve_transaction(tx_id: int):
+    """
+    Approve Transaction
+    ---
+    tags:
+      - Cash Transactions
+    security:
+      - Bearer: []
+    summary: Approve a PENDING cash transaction.
+    description: Only Managers/Owners can approve. Finalizes the money movement.
+    parameters:
+      - name: tx_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Transaction approved
+      403:
+        description: Permission denied
+      404:
+        description: Transaction not found
+      409:
+        description: Transaction not pending
+    """
     current_user = g.current_user
 
     tx, error = cash_service.approve_transaction(current_user, tx_id)
@@ -75,6 +145,28 @@ def approve_transaction(tx_id: int):
 @bp.post("/<int:tx_id>/reject")
 @login_required
 def reject_transaction(tx_id: int):
+    """
+    Reject Transaction
+    ---
+    tags:
+      - Cash Transactions
+    security:
+      - Bearer: []
+    summary: Reject a PENDING cash transaction.
+    description: Marks the transaction as rejected. No money is moved.
+    parameters:
+      - name: tx_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Transaction rejected
+      403:
+        description: Permission denied
+      404:
+        description: Transaction not found
+    """
     tx, error = cash_service.reject_transaction(g.current_user, tx_id)
 
     if error:
@@ -96,6 +188,55 @@ def reject_transaction(tx_id: int):
 @bp.get("")
 @login_required
 def search_transactions():
+    """
+    Search Transactions
+    ---
+    tags:
+      - Cash Transactions
+    security:
+      - Bearer: []
+    summary: Retrieve paginated cash transactions with filtering.
+    parameters:
+      - name: cashbox_id
+        in: query
+        type: integer
+      - name: type
+        in: query
+        type: string
+        enum: ["IN", "OUT", "ADJUSTMENT"]
+      - name: status
+        in: query
+        type: string
+        enum: ["PENDING", "CONFIRMED", "REJECTED"]
+      - name: category_id
+        in: query
+        type: integer
+      - name: date_from
+        in: query
+        type: string
+        format: date
+      - name: date_to
+        in: query
+        type: string
+        format: date
+      - name: min_amount
+        in: query
+        type: number
+      - name: max_amount
+        in: query
+        type: number
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of transactions found
+    """
     current_user = g.current_user
 
     cashbox_id = request.args.get("cashbox_id", type=int)

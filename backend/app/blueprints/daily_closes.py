@@ -27,6 +27,47 @@ def _serialize_close(close):
 @use_schema(CreateDailyCloseRequestSchema)
 @require_pin
 def create_daily_close(data: CreateDailyCloseRequestSchema):
+    """
+    Create Daily Close
+    ---
+    tags:
+      - Daily Closes
+    security:
+      - Bearer: []
+    summary: Close a cashbox for the day (Z-Report).
+    description: Records the physical count of cash. Calculates variance against the system's expected total.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - cashbox_id
+            - counted_total
+            - date
+          properties:
+            cashbox_id:
+              type: integer
+            counted_total:
+              type: number
+              format: float
+              description: The actual amount of money found in the drawer.
+            date:
+              type: string
+              format: date
+              example: "2023-10-27"
+            pin:
+              type: string
+              description: PIN required if acting user != session user.
+    responses:
+      201:
+        description: Daily Close created successfully
+      400:
+        description: Validation error or duplicate close
+      404:
+        description: Cashbox not found
+    """
     acting_user = g.current_user
     session_user = getattr(g, "session_user", acting_user)
 
@@ -55,6 +96,28 @@ def create_daily_close(data: CreateDailyCloseRequestSchema):
 @bp.post("/<int:close_id>/approve")
 @login_required
 def approve_daily_close(close_id: int):
+    """
+    Approve Daily Close
+    ---
+    tags:
+      - Daily Closes
+    security:
+      - Bearer: []
+    summary: Approve a discrepancy (variance) in a Daily Close.
+    description: Only Managers/Owners can approve. If there is a variance (e.g. missing $10), approving creates an ADJUSTMENT transaction to balance the books.
+    parameters:
+      - name: close_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Daily Close approved
+      403:
+        description: Permission denied
+      404:
+        description: Daily Close not found
+    """
     current_user = g.current_user
 
     close, error = daily_close_service.approve_daily_close(current_user, close_id)
@@ -71,6 +134,28 @@ def approve_daily_close(close_id: int):
 @bp.post("/<int:close_id>/reject")
 @login_required
 def reject_daily_close(close_id: int):
+    """
+    Reject Daily Close
+    ---
+    tags:
+      - Daily Closes
+    security:
+      - Bearer: []
+    summary: Reject a Daily Close.
+    description: Used when the count is wrong and needs to be redone. No financial adjustments are made.
+    parameters:
+      - name: close_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Daily Close rejected
+      403:
+        description: Permission denied
+      404:
+        description: Daily Close not found
+    """
     close, error = daily_close_service.reject_daily_close(g.current_user, close_id)
 
     if error:
@@ -92,6 +177,25 @@ def reject_daily_close(close_id: int):
 @bp.get("/<int:close_id>")
 @login_required
 def get_daily_close(close_id: int):
+    """
+    Get Single Daily Close
+    ---
+    tags:
+      - Daily Closes
+    security:
+      - Bearer: []
+    summary: Retrieve details of a specific daily close.
+    parameters:
+      - name: close_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Daily Close details
+      404:
+        description: Not found
+    """
     current_user = g.current_user
 
     close, error = daily_close_service.get_daily_close(current_user, close_id)
@@ -106,6 +210,38 @@ def get_daily_close(close_id: int):
 @bp.get("")
 @login_required
 def list_daily_closes():
+    """
+    Search Daily Closes
+    ---
+    tags:
+      - Daily Closes
+    security:
+      - Bearer: []
+    summary: Retrieve a history of daily closes.
+    parameters:
+      - name: cashbox_id
+        in: query
+        type: integer
+      - name: date_from
+        in: query
+        type: string
+        format: date
+      - name: date_to
+        in: query
+        type: string
+        format: date
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of daily closes
+    """
     current_user = g.current_user
 
     cashbox_id = request.args.get("cashbox_id", type=int)

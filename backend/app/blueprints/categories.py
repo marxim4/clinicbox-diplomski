@@ -25,6 +25,37 @@ def _serialize_category(cat):
 @login_required
 @use_schema(CreateCategoryRequestSchema)
 def create_category(data: CreateCategoryRequestSchema):
+    """
+    Create Category
+    ---
+    tags:
+      - Categories
+    security:
+      - Bearer: []
+    summary: Create a new financial category.
+    description: Used for tagging cash transactions (e.g., "Supplies", "Utilities").
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              example: "Office Supplies"
+            is_pinned:
+              type: boolean
+              default: false
+              description: Pinned categories appear at the top of the UI list.
+    responses:
+      201:
+        description: Category created
+      400:
+        description: Validation error or Duplicate name
+    """
     current_user = g.current_user
 
     category, error = category_service.create_category(current_user, data)
@@ -45,6 +76,18 @@ def create_category(data: CreateCategoryRequestSchema):
 @bp.get("")
 @login_required
 def list_categories():
+    """
+    List Categories
+    ---
+    tags:
+      - Categories
+    security:
+      - Bearer: []
+    summary: Retrieve all financial categories for the clinic.
+    responses:
+      200:
+        description: List of categories
+    """
     current_user = g.current_user
 
     items, error = category_service.list_categories(current_user)
@@ -61,6 +104,36 @@ def list_categories():
 @login_required
 @use_schema(UpdateCategoryRequestSchema)
 def update_category(category_id: int, data: UpdateCategoryRequestSchema):
+    """
+    Update Category
+    ---
+    tags:
+      - Categories
+    security:
+      - Bearer: []
+    summary: Rename or pin/unpin a category.
+    parameters:
+      - name: category_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+            is_pinned:
+              type: boolean
+            is_active:
+              type: boolean
+    responses:
+      200:
+        description: Update successful
+      404:
+        description: Category not found
+    """
     current_user = g.current_user
 
     category, error = category_service.update_category(current_user, category_id, data)

@@ -74,6 +74,51 @@ def _serialize_plan(plan):
 @login_required
 @use_schema(CreateInstallmentPlanRequestSchema)
 def create_plan(data: CreateInstallmentPlanRequestSchema):
+    """
+    Create Installment Plan
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: Create a new financial plan for a patient.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - patient_id
+            - total_amount
+            - installments
+          properties:
+            patient_id:
+              type: integer
+            doctor_id:
+              type: integer
+            total_amount:
+              type: number
+              format: float
+            installments:
+              type: array
+              description: List of scheduled payments.
+              items:
+                type: object
+                properties:
+                  due_date:
+                    type: string
+                    format: date
+                  amount:
+                    type: number
+            description:
+              type: string
+    responses:
+      201:
+        description: Plan created
+      400:
+        description: Validation error
+    """
     current_user = g.current_user
 
     plan, error = installment_service.create_plan(current_user, data)
@@ -97,6 +142,37 @@ def create_plan(data: CreateInstallmentPlanRequestSchema):
 @bp.get("")
 @login_required
 def list_plans():
+    """
+    Search Plans
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: Search and filter installment plans.
+    parameters:
+      - name: patient_id
+        in: query
+        type: integer
+      - name: doctor_id
+        in: query
+        type: integer
+      - name: status
+        in: query
+        type: string
+        enum: ["PLANNED", "PARTIALLY_PAID", "PAID", "OVERDUE", "CANCELLED"]
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of plans found
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -152,6 +228,25 @@ def list_plans():
 @bp.get("/<int:plan_id>")
 @login_required
 def get_plan(plan_id: int):
+    """
+    Get Plan Details
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: Retrieve full details of a plan including statistics.
+    parameters:
+      - name: plan_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Plan details
+      404:
+        description: Plan not found
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -169,6 +264,35 @@ def get_plan(plan_id: int):
 @login_required
 @use_schema(UpdateInstallmentPlanRequestSchema)
 def update_plan(plan_id: int, data: UpdateInstallmentPlanRequestSchema):
+    """
+    Update Plan
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: Modify a plan (e.g., change description, auto-payment method).
+    parameters:
+      - name: plan_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        schema:
+          type: object
+          properties:
+            description:
+              type: string
+            default_payment_method:
+              type: string
+              enum: ["CASH", "CARD"]
+    responses:
+      200:
+        description: Plan updated
+      404:
+        description: Plan not found
+    """
     current_user = g.current_user
 
     updated_plan, error = installment_service.update_plan(current_user, plan_id, data)
@@ -190,6 +314,34 @@ def update_plan(plan_id: int, data: UpdateInstallmentPlanRequestSchema):
 @bp.get("/upcoming-installments")
 @login_required
 def list_upcoming_installments():
+    """
+    Upcoming Installments
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: List payments due in the future.
+    parameters:
+      - name: from_date
+        in: query
+        type: string
+        format: date
+      - name: doctor_id
+        in: query
+        type: integer
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of upcoming payments
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -235,6 +387,32 @@ def list_upcoming_installments():
 @bp.get("/overdue-installments")
 @login_required
 def list_overdue_installments():
+    """
+    Overdue Installments
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: List unpaid payments that are past their due date.
+    parameters:
+      - name: to_date
+        in: query
+        type: string
+        format: date
+        description: Filter by due dates before this date.
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of overdue payments
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -280,6 +458,26 @@ def list_overdue_installments():
 @bp.post("/<int:plan_id>/cancel")
 @login_required
 def cancel_plan(plan_id: int):
+    """
+    Cancel Plan
+    ---
+    tags:
+      - Installment Plans
+    security:
+      - Bearer: []
+    summary: Set a plan status to CANCELLED.
+    description: Stops future installment alerts. Does not refund past payments.
+    parameters:
+      - name: plan_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Plan cancelled
+      404:
+        description: Plan not found
+    """
     current_user = g.current_user
 
     plan, error = installment_service.cancel_plan(current_user, plan_id)

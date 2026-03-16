@@ -21,6 +21,90 @@ def _serialize(row):
 @bp.get("")
 @login_required
 def search_audit_logs():
+    """
+    Search Audit Logs
+    ---
+    tags:
+      - Audit Logs
+    security:
+      - Bearer: []
+    summary: Retrieve a paginated list of audit trail entries.
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        description: Filter by the ID of the user who performed the action.
+      - name: action
+        in: query
+        type: string
+        enum: [CREATE, UPDATE, DELETE, LOGIN, LOGOUT, APPROVE, REJECT]
+        description: Filter by the type of action performed.
+      - name: entity_name
+        in: query
+        type: string
+        description: Filter by the target resource type (e.g., 'Payment', 'Patient').
+      - name: entity_id
+        in: query
+        type: string
+        description: Filter by the specific ID of the target resource.
+      - name: date_from
+        in: query
+        type: string
+        format: date
+        description: Start date filter (YYYY-MM-DD).
+      - name: date_to
+        in: query
+        type: string
+        format: date
+        description: End date filter (YYYY-MM-DD).
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: Page number for pagination.
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+        description: Items per page.
+    responses:
+      200:
+        description: A list of audit logs matching the criteria.
+        schema:
+          type: object
+          properties:
+            audit_logs:
+              type: array
+              items:
+                type: object
+                properties:
+                  log_id:
+                    type: integer
+                  action:
+                    type: string
+                  entity_name:
+                    type: string
+                  entity_id:
+                    type: string
+                  user_id:
+                    type: integer
+                  created_at:
+                    type: string
+                    format: date-time
+            meta:
+              type: object
+              properties:
+                total_items:
+                  type: integer
+                total_pages:
+                  type: integer
+                current_page:
+                  type: integer
+                page_size:
+                  type: integer
+      400:
+        description: Invalid parameters (e.g., bad date format).
+    """
     current_user = g.current_user
 
     user_id = request.args.get("user_id", type=int)
@@ -86,6 +170,41 @@ def search_audit_logs():
 @bp.get("/verify")
 @login_required
 def verify_audit_chain():
+    """
+    Verify Audit Chain Integrity
+    ---
+    tags:
+      - Audit Logs
+    security:
+      - Bearer: []
+    summary: Cryptographically verify the hash chain to detect database tampering.
+    description: >
+      Iterates through the audit log chain and recomputes hashes to ensure that
+      no records have been altered or deleted directly in the database.
+    parameters:
+      - name: limit
+        in: query
+        type: integer
+        default: 100
+        description: Number of recent logs to verify (verifying all logs can be slow).
+    responses:
+      200:
+        description: Verification result.
+        schema:
+          type: object
+          properties:
+            tampered:
+              type: boolean
+              description: True if a discrepancy was found.
+            broken_chain_at_id:
+              type: integer
+              description: The ID of the log where the hash mismatch occurred (if any).
+            details:
+              type: string
+              description: Textual explanation of the result.
+      400:
+        description: Error processing the request.
+    """
     current_user = g.current_user
     limit = request.args.get("limit", type=int)
 

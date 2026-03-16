@@ -28,6 +28,54 @@ def _serialize_payment(payment):
 @use_schema(CreatePaymentRequestSchema)
 @require_pin
 def create_payment(data: CreatePaymentRequestSchema):
+    """
+    Create Payment
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Process a new payment.
+    description: >
+      Handles both debt payments (linked to a plan) and pure tips.
+      If 'requires_payment_approval' is enabled for the clinic and the user is Junior,
+      status will be PENDING. Otherwise, it is PAID immediately.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - amount
+            - method
+          properties:
+            amount:
+              type: number
+              format: float
+              description: The amount to pay towards debt.
+            tip_amount:
+              type: number
+              format: float
+              description: Optional tip amount.
+            method:
+              type: string
+              enum: ["CASH", "CARD", "TRANSFER"]
+            plan_id:
+              type: integer
+              description: ID of the installment plan being paid.
+            cashbox_id:
+              type: integer
+              description: ID of the cashbox receiving money (if CASH).
+            pin:
+              type: string
+              description: Acting user's PIN if different from session user.
+    responses:
+      201:
+        description: Payment created
+      400:
+        description: Validation error
+    """
     acting_user = g.current_user
     session_user = getattr(g, "session_user", acting_user)
 
@@ -60,6 +108,28 @@ def create_payment(data: CreatePaymentRequestSchema):
 @bp.post("/<int:payment_id>/approve")
 @login_required
 def approve_payment(payment_id: int):
+    """
+    Approve Payment
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Approve a PENDING payment.
+    description: Finalizes the transaction, updates the plan balance, and moves cash (if applicable).
+    parameters:
+      - name: payment_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Payment approved
+      403:
+        description: Permission denied
+      404:
+        description: Payment not found
+    """
     current_user = g.current_user
 
     payment, error = payment_service.approve_payment(current_user, payment_id)
@@ -82,6 +152,28 @@ def approve_payment(payment_id: int):
 @bp.post("/<int:payment_id>/reject")
 @login_required
 def reject_payment(payment_id: int):
+    """
+    Reject Payment
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Reject a PENDING payment.
+    description: Marks the payment as rejected. No money is moved, no debt is reduced.
+    parameters:
+      - name: payment_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Payment rejected
+      403:
+        description: Permission denied
+      404:
+        description: Payment not found
+    """
     payment, error = payment_service.reject_payment(g.current_user, payment_id)
 
     if error:
@@ -103,6 +195,25 @@ def reject_payment(payment_id: int):
 @bp.get("/<int:payment_id>")
 @login_required
 def get_payment(payment_id: int):
+    """
+    Get Payment Details
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Retrieve a single payment by ID.
+    parameters:
+      - name: payment_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Payment details
+      404:
+        description: Payment not found
+    """
     current_user = g.current_user
 
     payment, error = payment_service.get_payment(
@@ -122,6 +233,29 @@ def get_payment(payment_id: int):
 @bp.get("/by-plan/<int:plan_id>")
 @login_required
 def list_payments_for_plan(plan_id: int):
+    """
+    List Payments for Plan
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Retrieve all payments associated with a specific installment plan.
+    parameters:
+      - name: plan_id
+        in: path
+        type: integer
+        required: true
+      - name: page
+        in: query
+        type: integer
+      - name: page_size
+        in: query
+        type: integer
+    responses:
+      200:
+        description: List of payments
+    """
     current_user = g.current_user
 
     page = request.args.get("page", type=int)
@@ -156,6 +290,23 @@ def list_payments_for_plan(plan_id: int):
 @bp.get("/by-installment/<int:installment_id>")
 @login_required
 def list_payments_for_installment(installment_id: int):
+    """
+    List Payments for Installment
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Retrieve payments applied to a specific installment.
+    parameters:
+      - name: installment_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: List of payments
+    """
     current_user = g.current_user
 
     page = request.args.get("page", type=int)
@@ -190,6 +341,54 @@ def list_payments_for_installment(installment_id: int):
 @bp.get("/search")
 @login_required
 def search_payments():
+    """
+    Search Payments
+    ---
+    tags:
+      - Payments
+    security:
+      - Bearer: []
+    summary: Advanced search for payments.
+    parameters:
+      - name: doctor_id
+        in: query
+        type: integer
+      - name: patient_id
+        in: query
+        type: integer
+      - name: method
+        in: query
+        type: string
+        enum: ["CASH", "CARD", "TRANSFER"]
+      - name: date_from
+        in: query
+        type: string
+        format: date
+      - name: date_to
+        in: query
+        type: string
+        format: date
+      - name: min_amount
+        in: query
+        type: number
+      - name: max_amount
+        in: query
+        type: number
+      - name: has_tip
+        in: query
+        type: boolean
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: List of payments found
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 

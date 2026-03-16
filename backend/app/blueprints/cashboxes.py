@@ -27,6 +27,32 @@ def _serialize_cashbox(cb):
 @login_required
 @use_schema(CreateCashboxRequestSchema)
 def create_cashbox(data: CreateCashboxRequestSchema):
+    """
+    Create Cashbox
+    ---
+    tags:
+      - Cashboxes
+    security:
+      - Bearer: []
+    summary: Define a new physical cash register.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              example: "Reception Desk A"
+    responses:
+      201:
+        description: Cashbox created
+      400:
+        description: Validation error
+    """
     current_user = g.current_user
 
     cashbox, error = cash_service.create_cashbox(current_user, data)
@@ -43,6 +69,23 @@ def create_cashbox(data: CreateCashboxRequestSchema):
 @bp.get("")
 @login_required
 def list_cashboxes():
+    """
+    List Cashboxes
+    ---
+    tags:
+      - Cashboxes
+    security:
+      - Bearer: []
+    summary: Retrieve all cashboxes for the clinic.
+    parameters:
+      - name: include_inactive
+        in: query
+        type: boolean
+        description: If true, include archived cashboxes.
+    responses:
+      200:
+        description: List of cashboxes
+    """
     current_user = g.current_user
     include_inactive = request.args.get("include_inactive", type=str)
 
@@ -67,6 +110,34 @@ def list_cashboxes():
 @login_required
 @use_schema(UpdateCashboxRequestSchema)
 def update_cashbox(cashbox_id: int, data: UpdateCashboxRequestSchema):
+    """
+    Update Cashbox
+    ---
+    tags:
+      - Cashboxes
+    security:
+      - Bearer: []
+    summary: Modify cashbox details (e.g., rename or deactivate).
+    parameters:
+      - name: cashbox_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+            is_active:
+              type: boolean
+    responses:
+      200:
+        description: Update successful
+      404:
+        description: Cashbox not found
+    """
     current_user = g.current_user
 
     cashbox, error = cash_service.update_cashbox(current_user, cashbox_id, data)
@@ -85,6 +156,34 @@ def update_cashbox(cashbox_id: int, data: UpdateCashboxRequestSchema):
 @bp.get("/<int:cashbox_id>/balance")
 @login_required
 def get_cashbox_balance(cashbox_id: int):
+    """
+    Get Cashbox Balance
+    ---
+    tags:
+      - Cashboxes
+    security:
+      - Bearer: []
+    summary: Retrieve detailed financial stats for a cashbox.
+    description: Includes current amount and total In/Out within a date range.
+    parameters:
+      - name: cashbox_id
+        in: path
+        type: integer
+        required: true
+      - name: date_from
+        in: query
+        type: string
+        format: date
+      - name: date_to
+        in: query
+        type: string
+        format: date
+    responses:
+      200:
+        description: Balance statistics
+      404:
+        description: Cashbox not found
+    """
     current_user = g.current_user
 
     def parse_dt(s: str | None):

@@ -1,6 +1,26 @@
 version: "3.9"
 
 services:
+  # 1. The Python Backend
+  web:
+    # CHANGE THIS LINE: Point to the backend folder
+    build: ./backend
+    container_name: clinicbox_backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      # Keep 'db' as the host. Docker resolves this to the service name below.
+      DATABASE_URL: postgresql+psycopg2://clinicbox:clinicbox@db:5432/clinicbox
+      FLASK_APP: app
+      FLASK_ENV: development
+      JWT_SECRET_KEY: dev-secret-key
+    volumes:
+      # CHANGE THIS LINE: Map the host 'backend' folder to container '/app'
+      - ./backend:/app
+
+  # 2. The Database
   db:
     image: postgres:16
     container_name: clinicbox_postgres

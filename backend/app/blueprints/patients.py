@@ -38,6 +38,48 @@ def _serialize_patient(patient):
 @login_required
 @use_schema(CreatePatientRequestSchema)
 def create_patient(data: CreatePatientRequestSchema):
+    """
+    Create Patient
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Register a new patient.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - first_name
+            - last_name
+            - email
+          properties:
+            first_name:
+              type: string
+            last_name:
+              type: string
+            email:
+              type: string
+              format: email
+            phone:
+              type: string
+            birth_date:
+              type: string
+              format: date
+            doctor_id:
+              type: integer
+              description: Primary physician ID.
+    responses:
+      201:
+        description: Patient created
+      409:
+        description: Email already in use
+      400:
+        description: Validation error
+    """
     current_user = g.current_user
 
     patient, error = patient_service.create_patient(current_user, data)
@@ -59,6 +101,25 @@ def create_patient(data: CreatePatientRequestSchema):
 @bp.get("")
 @login_required
 def list_patients():
+    """
+    List Patients
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Retrieve all patients for the clinic.
+    parameters:
+      - name: page
+        in: query
+        type: integer
+      - name: page_size
+        in: query
+        type: integer
+    responses:
+      200:
+        description: List of patients
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -92,6 +153,25 @@ def list_patients():
 @bp.get("/<int:patient_id>")
 @login_required
 def get_patient(patient_id: int):
+    """
+    Get Patient Details
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Retrieve a single patient by ID.
+    parameters:
+      - name: patient_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Patient details
+      404:
+        description: Patient not found
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -106,6 +186,40 @@ def get_patient(patient_id: int):
 @login_required
 @use_schema(UpdatePatientRequestSchema)
 def update_patient(patient_id: int, data: UpdatePatientRequestSchema):
+    """
+    Update Patient
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Modify patient details.
+    parameters:
+      - name: patient_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        schema:
+          type: object
+          properties:
+            first_name:
+              type: string
+            last_name:
+              type: string
+            email:
+              type: string
+            phone:
+              type: string
+            doctor_id:
+              type: integer
+    responses:
+      200:
+        description: Update successful
+      404:
+        description: Patient not found
+    """
     current_user = g.current_user
 
     updated_patient, error = patient_service.update_patient(current_user, patient_id, data)
@@ -129,6 +243,23 @@ def update_patient(patient_id: int, data: UpdatePatientRequestSchema):
 @bp.get("/doctor/<int:doctor_id>")
 @login_required
 def list_patients_for_doctor(doctor_id: int):
+    """
+    List Patients by Doctor
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Retrieve all patients assigned to a specific doctor.
+    parameters:
+      - name: doctor_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: List of patients
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -164,6 +295,43 @@ def list_patients_for_doctor(doctor_id: int):
 @bp.get("/search")
 @login_required
 def search_patients():
+    """
+    Search Patients
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Advanced search for patients.
+    parameters:
+      - name: q
+        in: query
+        type: string
+        description: General search query (name, email, phone).
+      - name: first_name
+        in: query
+        type: string
+      - name: last_name
+        in: query
+        type: string
+      - name: email
+        in: query
+        type: string
+      - name: doctor_id
+        in: query
+        type: integer
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: page_size
+        in: query
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: Search results
+    """
     current_user = g.current_user
     clinic_id = current_user.clinic_id
 
@@ -220,6 +388,28 @@ def search_patients():
 @bp.delete("/<int:patient_id>")
 @login_required
 def delete_patient(patient_id: int):
+    """
+    Archive Patient
+    ---
+    tags:
+      - Patients
+    security:
+      - Bearer: []
+    summary: Soft-delete a patient.
+    description: Only possible if the patient has no active financial plans.
+    parameters:
+      - name: patient_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Patient archived
+      400:
+        description: Cannot delete (e.g. active plans)
+      404:
+        description: Patient not found
+    """
     current_user = g.current_user
 
     success, error = patient_service.archive_patient(current_user, patient_id)
