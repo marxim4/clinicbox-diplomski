@@ -7,6 +7,8 @@ from flask import jsonify, g
 from flask_jwt_extended import jwt_required
 
 from ..enums import UserRole
+from ..extensions import db
+from ..models import User
 from .helpers import load_current_user
 
 

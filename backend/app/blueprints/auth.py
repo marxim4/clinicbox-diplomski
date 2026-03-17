@@ -126,6 +126,7 @@ def register_owner(data: RegisterOwnerSchema):
         clinic_type=clinic_type,
         currency=(data.currency or "EUR").strip(),
         default_language=(data.default_language or "en").strip(),
+        timezone=(data.timezone or "UTC").strip(),
 
         requires_payment_approval=False,
         requires_cash_approval=False,

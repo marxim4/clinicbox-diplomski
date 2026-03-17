@@ -17,6 +17,7 @@ def _serialize_clinic(clinic):
         "address": clinic.address,
         "currency": clinic.currency,
         "default_language": clinic.default_language,
+        "timezone": clinic.timezone,
         "clinic_type": clinic.clinic_type.name if clinic.clinic_type else None,
 
         "requires_payment_approval": clinic.requires_payment_approval,

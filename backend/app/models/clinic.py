@@ -18,6 +18,7 @@ class Clinic(db.Model):
 
     currency: Mapped[str] = mapped_column(String(10), default="EUR")
     default_language: Mapped[str] = mapped_column(String(10), default="en")
+    timezone: Mapped[str] = mapped_column(String(60), default="UTC", nullable=False)
 
     clinic_type: Mapped[ClinicType] = mapped_column(
         Enum(ClinicType),

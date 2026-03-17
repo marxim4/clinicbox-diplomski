@@ -18,6 +18,7 @@ class ClinicRepository:
             address: str | None = None,
             currency: str | None = None,
             default_language: str | None = None,
+            timezone: str | None = None,
     ):
         if name is not None:
             clinic.name = name
@@ -27,6 +28,8 @@ class ClinicRepository:
             clinic.currency = currency
         if default_language is not None:
             clinic.default_language = default_language
+        if timezone is not None:
+            clinic.timezone = timezone
 
         db.session.flush()
         return clinic

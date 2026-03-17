@@ -137,3 +137,76 @@ def test_require_pin_failed_check(app):
 
             resp, status = decorated(data=data)
             assert status == HTTPStatus.FORBIDDEN
+
+
+def test_require_pin_correct_pin_grants_access(app):
+    """
+    Verifies the same-user PIN happy path.
+    When PIN is required and the correct PIN is provided, the endpoint is reached.
+    """
+    with app.app_context():
+        mock_user = MagicMock()
+        mock_user.user_id = 1
+        mock_user.clinic.require_pin_for_actions = True
+        mock_user.clinic.require_pin_for_signoff = False
+        mock_user.pin_hash = "exists"
+        mock_user.check_pin.return_value = True  # Correct PIN
+
+        with patch('app.utils.wrappers.load_current_user', return_value=mock_user):
+            decorated = require_pin(dummy_handler)
+            data = MagicMock()
+            data.acting_user_id = None
+            data.pin = "1234"
+
+            resp, status = decorated(data=data)
+            assert status == HTTPStatus.OK
+
+
+def test_require_pin_acting_user_different_from_session(app):
+    """
+    Verifies the acting_user (dual sign-off) PIN path.
+
+    This path was previously broken: wrappers.py referenced `db` and `User`
+    without importing them, causing a NameError at runtime whenever
+    acting_user_id differed from the session user's id.
+
+    The fix adds the missing imports. This test confirms the path now works:
+    a session user (receptionist) presents a different acting_user_id (doctor),
+    the doctor's record is loaded via db.session.get(User, acting_user_id),
+    and the doctor's PIN is verified.
+
+    The User symbol is patched at app.utils.wrappers.User so the assertion
+    can verify the exact call signature: db.session.get(User, 2).
+    """
+    with app.app_context():
+        session_user = MagicMock()
+        session_user.user_id = 1
+        session_user.clinic_id = 10
+        # Explicit: session_user.clinic PIN flags are not used in this code path,
+        # but should not be left as auto-truthy MagicMock attributes.
+        session_user.clinic.require_pin_for_actions = False
+        session_user.clinic.require_pin_for_signoff = False
+
+        acting_user = MagicMock()
+        acting_user.user_id = 2
+        acting_user.clinic_id = 10
+        acting_user.clinic.require_pin_for_actions = True
+        acting_user.clinic.require_pin_for_signoff = False
+        acting_user.pin_hash = "exists"
+        acting_user.check_pin.return_value = True  # Doctor's correct PIN
+
+        mock_db = MagicMock()
+        mock_db.session.get.return_value = acting_user
+
+        with patch('app.utils.wrappers.load_current_user', return_value=session_user), \
+             patch('app.utils.wrappers.db', mock_db), \
+             patch('app.utils.wrappers.User') as mock_user_cls:
+            decorated = require_pin(dummy_handler)
+            data = MagicMock()
+            data.acting_user_id = 2  # Different from session_user.user_id (1)
+            data.pin = "5678"
+
+            resp, status = decorated(data=data)
+            assert status == HTTPStatus.OK
+            # Verify the exact DB lookup: db.session.get(User, 2)
+            mock_db.session.get.assert_called_once_with(mock_user_cls, 2)

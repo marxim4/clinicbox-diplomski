@@ -52,6 +52,7 @@ class ClinicService:
             address=payload.address,
             currency=payload.currency,
             default_language=payload.default_language,
+            timezone=payload.timezone,
         )
         return updated_clinic, None
 

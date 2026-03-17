@@ -11,6 +11,7 @@ from ..data_layer.payment_repository import payment_repo
 from ..services.cash_service import cash_service
 from ..schemas.daily_close import CreateDailyCloseRequestSchema
 from ..enums.daily_close_status_enum import DailyCloseStatus
+from ..utils.timezone import clinic_today
 
 
 class DailyCloseService:
@@ -62,9 +63,10 @@ class DailyCloseService:
         if pending_count > 0:
             return None, f"Cannot close: there are {pending_count} pending payments. Approve or reject them first."
 
-        day = payload.date or DateType.today()
+        today = clinic_today(clinic.timezone)
+        day = payload.date or today
 
-        if day > DateType.today():
+        if day > today:
             return None, "cannot close register for a future date"
 
         existing = daily_close_repo.get_for_cashbox_and_date(
@@ -211,18 +213,23 @@ class DailyCloseService:
         """
         Checks if the register is closed for the current day.
 
+        Uses the clinic's configured timezone so that "today" means today
+        for the clinic, not today on the server.
+
         Used as a guard clause in other services (e.g., PaymentService) to block
         financial activity after the books have been closed.
         """
         cashbox = cashbox_repo.get_in_clinic(cashbox_id, clinic_id)
-
         if not cashbox:
             return False
+
+        clinic = clinic_repo.get_by_id(clinic_id)
+        today = clinic_today(clinic.timezone) if clinic else DateType.today()
 
         existing = daily_close_repo.get_for_cashbox_and_date(
             clinic_id=clinic_id,
             cashbox_id=cashbox_id,
-            day=DateType.today(),
+            day=today,
         )
 
         if existing and existing.status != DailyCloseStatus.REJECTED.value:

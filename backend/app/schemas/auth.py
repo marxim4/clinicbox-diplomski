@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 import re
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
@@ -21,6 +22,7 @@ class RegisterOwnerSchema(BaseModel):
     clinic_type: Optional[str] = None
     currency: Optional[str] = "EUR"
     default_language: Optional[str] = "en"
+    timezone: Optional[str] = "UTC"
 
     @field_validator("owner_name", "clinic_name")
     @classmethod
@@ -29,6 +31,20 @@ class RegisterOwnerSchema(BaseModel):
         if not v2:
             raise ValueError("must not be empty")
         return v2
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("timezone must not be empty")
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, KeyError):
+            raise ValueError(f"'{v}' is not a valid IANA timezone (e.g. 'Europe/Belgrade', 'UTC')")
+        return v
 
     @field_validator("password")
     @classmethod

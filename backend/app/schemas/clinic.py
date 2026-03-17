@@ -1,4 +1,5 @@
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, field_validator
 
 
@@ -7,6 +8,7 @@ class UpdateClinicDetailsSchema(BaseModel):
     address: Optional[str] = None
     currency: Optional[str] = None
     default_language: Optional[str] = None
+    timezone: Optional[str] = None
 
     @field_validator("name", "currency", "default_language")
     @classmethod
@@ -17,6 +19,20 @@ class UpdateClinicDetailsSchema(BaseModel):
         if not v2:
             raise ValueError("must not be empty")
         return v2
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("timezone must not be empty")
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, KeyError):
+            raise ValueError(f"'{v}' is not a valid IANA timezone (e.g. 'Europe/Belgrade', 'UTC')")
+        return v
 
 
 class UpdateClinicSettingsSchema(BaseModel):

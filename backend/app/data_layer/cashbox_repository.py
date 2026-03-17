@@ -88,7 +88,7 @@ class CashboxRepository:
 
     def adjust_balance_for_transaction(self, cashbox: Cashbox, tx_type, amount: float):
         amount_dec = Decimal(str(amount))
-        current_dec = cashbox.current_amount if cashbox.current_amount is not None else Decimal("0.00")
+        current_dec = Decimal(str(cashbox.current_amount)) if cashbox.current_amount is not None else Decimal("0.00")
 
         if tx_type == CashTransactionType.IN:
             cashbox.current_amount = current_dec + amount_dec
