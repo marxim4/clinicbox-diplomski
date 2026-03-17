@@ -84,12 +84,14 @@ Adjust values if necessary.
 ### 6. Run database migrations
 
 ```bash
-flask --app backend/app db upgrade
+cd backend
+python -m flask --app app db upgrade
 ```
 
 ### 7. Start the API server
 
 ```bash
+cd ..
 python backend/wsgi.py
 ```
 
