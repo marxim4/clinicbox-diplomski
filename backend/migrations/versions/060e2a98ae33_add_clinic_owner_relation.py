@@ -49,18 +49,15 @@ def upgrade():
 
 
 def downgrade():
-    # PAYMENT
-    # 🟢 Drop column → automatically drops FK constraint in Postgres
+    # Payment
     with op.batch_alter_table("payment") as batch_op:
         batch_op.drop_column("doctor_id")
 
-    # CLINIC
-    # 🟢 Drop column → automatically drops FK + UNIQUE
+    # Clinic
     with op.batch_alter_table("clinic") as batch_op:
         batch_op.drop_column("owner_user_id")
 
-    # CATEGORY
-    # 🟢 Here we drop a constraint *we know exists* because we named it explicitly
+    # Category
     with op.batch_alter_table("category") as batch_op:
         batch_op.drop_constraint(
             "uq_category_clinic_name",
